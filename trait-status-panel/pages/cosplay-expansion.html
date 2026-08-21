@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>特质面板 - 漫展 NPC 扩展</title>
+    <style id="theme-vars">
+/* 毕业咸鱼模拟器 - 特质状态面板设计 Token
+ * 风格：柔和 slate 基底 + 琥珀品牌色 + 圆润卡片
+ */
+
+:root {
+  /* 品牌主色：温暖琥珀 */
+  --brand-50: #fffbeb;
+  --brand-100: #fef3c7;
+  --brand-200: #fde68a;
+  --brand-300: #fcd34d;
+  --brand-400: #fbbf24;
+  --brand-500: #f59e0b;
+  --brand-600: #d97706;
+  --brand-700: #b45309;
+  --brand-800: #92400e;
+  --brand-900: #78350f;
+
+  /* 中性色阶：slate */
+  --slate-50: #f8fafc;
+  --slate-100: #f1f5f9;
+  --slate-200: #e2e8f0;
+  --slate-300: #cbd5e1;
+  --slate-400: #94a3b8;
+  --slate-500: #64748b;
+  --slate-600: #475569;
+  --slate-700: #334155;
+  --slate-800: #1e293b;
+  --slate-900: #0f172a;
+
+  /* 状态语义色 */
+  --state-success: #10b981;
+  --state-success-bg: #d1fae5;
+  --state-warning: #f59e0b;
+  --state-warning-bg: #fef3c7;
+  --state-error: #f43f5e;
+  --state-error-bg: #ffe4e6;
+  --state-info: #8b5cf6;
+  --state-info-bg: #ede9fe;
+
+  /* 语义别名（apply-html-head-contract 需要） */
+  --brand-background: var(--slate-100);
+  --brand-foreground: var(--slate-800);
+  --brand-card: #ffffff;
+  --brand-card-foreground: var(--slate-800);
+  --brand-popover: #ffffff;
+  --brand-popover-foreground: var(--slate-800);
+  --brand-primary: var(--brand-500);
+  --brand-primary-foreground: #ffffff;
+  --brand-muted: var(--slate-100);
+  --brand-muted-foreground: var(--slate-500);
+  --brand-border: var(--slate-200);
+  --brand-input: var(--slate-200);
+  --brand-ring: var(--brand-400);
+  --brand-radius-sm: 4px;
+  --brand-radius-md: 8px;
+  --brand-radius-lg: 16px;
+
+  /* 尺寸与阴影 */
+  --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.05), 0 1px 2px rgba(15, 23, 42, 0.03);
+  --shadow-float: 0 8px 24px -8px rgba(15, 23, 42, 0.18);
+  --font-sans: 'Inter', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+}
+
+html {
+  font-family: var(--font-sans);
+}
+
+body {
+  background: var(--brand-background);
+  color: var(--brand-foreground);
+}
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-background: var(--brand-background);
+    --color-foreground: var(--brand-foreground);
+    --color-card: var(--brand-card);
+    --color-card-foreground: var(--brand-card-foreground);
+    --color-popover: var(--brand-popover);
+    --color-popover-foreground: var(--brand-popover-foreground);
+    --color-primary: var(--brand-primary);
+    --color-primary-foreground: var(--brand-primary-foreground);
+    --color-muted: var(--brand-muted);
+    --color-muted-foreground: var(--brand-muted-foreground);
+    --color-border: var(--brand-border);
+    --color-input: var(--brand-input);
+    --color-ring: var(--brand-ring);
+    --radius-sm: var(--brand-radius-sm);
+    --radius-md: var(--brand-radius-md);
+    --radius-lg: var(--brand-radius-lg);
+  }
+  @layer base {
+    body { background: var(--brand-background); color: var(--brand-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style id="semantic-token-fallback">
+      .bg-background { background-color: var(--brand-background); }
+      .text-background { color: var(--brand-background); }
+      .border-background { border-color: var(--brand-background); }
+      .ring-background { --tw-ring-color: var(--brand-background); }
+      .bg-foreground { background-color: var(--brand-foreground); }
+      .text-foreground { color: var(--brand-foreground); }
+      .border-foreground { border-color: var(--brand-foreground); }
+      .ring-foreground { --tw-ring-color: var(--brand-foreground); }
+      .bg-card { background-color: var(--brand-card); }
+      .text-card { color: var(--brand-card); }
+      .border-card { border-color: var(--brand-card); }
+      .ring-card { --tw-ring-color: var(--brand-card); }
+      .bg-card-foreground { background-color: var(--brand-card-foreground); }
+      .text-card-foreground { color: var(--brand-card-foreground); }
+      .border-card-foreground { border-color: var(--brand-card-foreground); }
+      .ring-card-foreground { --tw-ring-color: var(--brand-card-foreground); }
+      .bg-popover { background-color: var(--brand-popover); }
+      .text-popover { color: var(--brand-popover); }
+      .border-popover { border-color: var(--brand-popover); }
+      .ring-popover { --tw-ring-color: var(--brand-popover); }
+      .bg-popover-foreground { background-color: var(--brand-popover-foreground); }
+      .text-popover-foreground { color: var(--brand-popover-foreground); }
+      .border-popover-foreground { border-color: var(--brand-popover-foreground); }
+      .ring-popover-foreground { --tw-ring-color: var(--brand-popover-foreground); }
+      .bg-primary { background-color: var(--brand-primary); }
+      .text-primary { color: var(--brand-primary); }
+      .border-primary { border-color: var(--brand-primary); }
+      .ring-primary { --tw-ring-color: var(--brand-primary); }
+      .bg-primary-foreground { background-color: var(--brand-primary-foreground); }
+      .text-primary-foreground { color: var(--brand-primary-foreground); }
+      .border-primary-foreground { border-color: var(--brand-primary-foreground); }
+      .ring-primary-foreground { --tw-ring-color: var(--brand-primary-foreground); }
+      .bg-muted { background-color: var(--brand-muted); }
+      .text-muted { color: var(--brand-muted); }
+      .border-muted { border-color: var(--brand-muted); }
+      .ring-muted { --tw-ring-color: var(--brand-muted); }
+      .bg-muted-foreground { background-color: var(--brand-muted-foreground); }
+      .text-muted-foreground { color: var(--brand-muted-foreground); }
+      .border-muted-foreground { border-color: var(--brand-muted-foreground); }
+      .ring-muted-foreground { --tw-ring-color: var(--brand-muted-foreground); }
+      .bg-border { background-color: var(--brand-border); }
+      .text-border { color: var(--brand-border); }
+      .border-border { border-color: var(--brand-border); }
+      .ring-border { --tw-ring-color: var(--brand-border); }
+      .bg-input { background-color: var(--brand-input); }
+      .text-input { color: var(--brand-input); }
+      .border-input { border-color: var(--brand-input); }
+      .ring-input { --tw-ring-color: var(--brand-input); }
+      .bg-ring { background-color: var(--brand-ring); }
+      .text-ring { color: var(--brand-ring); }
+      .border-ring { border-color: var(--brand-ring); }
+      .ring-ring { --tw-ring-color: var(--brand-ring); }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+    </style>
+</head>
+<body class="min-h-screen font-sans antialiased">
+    <div class="app-root">
+        <header class="top-header">
+            <div class="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+                <div class="flex items-center gap-3">
+                    <span class="text-2xl" aria-hidden="true">🐟</span>
+                    <h1 class="text-lg sm:text-xl font-bold text-foreground">毕业咸鱼模拟器</h1>
+                </div>
+                <div class="flex flex-wrap items-center justify-end gap-2">
+                    <span class="game-tag">60 天试用</span>
+                    <span class="game-tag">保命兼职</span>
+                    <span class="game-tag">事件链奇遇</span>
+                </div>
+            </div>
+        </header>
+
+        <main>
+            <div class="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
+                <div class="game-layout">
+                    <!-- 左侧：玩家状态面板 -->
+                    <aside class="game-col status-panel" id="player-status-with-traits">
+                        <div class="card">
+                            <div class="flex items-start justify-between gap-3 mb-5">
+                                <div>
+                                    <h2 class="text-lg font-bold text-foreground">玩家状态</h2>
+                                    <p class="text-xs text-muted-foreground mt-0.5">自由职业生存档案</p>
+                                </div>
+                                <div class="text-right">
+                                    <div class="text-xs text-muted-foreground">当前进度</div>
+                                    <div class="text-sm font-semibold text-foreground">第 12 / 60 天</div>
+                                </div>
+                            </div>
+
+                            <!-- 基础属性 -->
+                            <div class="space-y-3 mb-6">
+                                <div class="attr-row">
+                                    <span class="attr-label"><span aria-hidden="true">💰</span> 存款</span>
+                                    <div class="attr-bar-wrap">
+                                        <div class="attr-bar" style="--bar-color: var(--brand-500); --bar-pct: 45%;"></div>
+                                    </div>
+                                    <span class="attr-value">¥4,200</span>
+                                </div>
+                                <div class="attr-row">
+                                    <span class="attr-label"><span aria-hidden="true">❤️</span> 健康</span>
+                                    <div class="attr-bar-wrap">
+                                        <div class="attr-bar" style="--bar-color: var(--state-error); --bar-pct: 62%;"></div>
+                                    </div>
+                                    <span class="attr-value">62</span>
+                                </div>
+                                <div class="attr-row">
+                                    <span class="attr-label"><span aria-hidden="true">⚡</span> 精力</span>
+                                    <div class="attr-bar-wrap">
+                                        <div class="attr-bar" style="--bar-color: var(--state-warning); --bar-pct: 38%;"></div>
+                                    </div>
+                                    <span class="attr-value">38</span>
+                                </div>
+                                <div class="attr-row">
+                                    <span class="attr-label"><span aria-hidden="true">🧠</span> 压力</span>
+                                    <div class="attr-bar-wrap">
+                                        <div class="attr-bar" style="--bar-color: var(--state-info); --bar-pct: 55%;"></div>
+                                    </div>
+                                    <span class="attr-value">165/300</span>
+                                </div>
+                            </div>
+
+                            <!-- 当前特质 -->
+                            <section id="traits-section" aria-labelledby="traits-heading">
+                                <div class="flex items-center justify-between gap-2 mb-3">
+                                    <h3 id="traits-heading" class="text-sm font-bold text-foreground flex items-center gap-1.5">
+                                        <i data-lucide="sparkles" class="w-4 h-4 text-primary"></i>
+                                        当前特质
+                                    </h3>
+                                    <button type="button" class="inline-flex items-center justify-center w-6 h-6 rounded-full hover:bg-muted transition-colors" aria-label="特质说明">
+                                        <i data-lucide="info" class="w-3.5 h-3.5 text-muted-foreground"></i>
+                                    </button>
+                                </div>
+
+                                <div class="trait-list">
+                                    <article id="debuff-sprain" class="trait-card trait-card--debuff">
+                                        <div class="trait-icon" aria-hidden="true">👠</div>
+                                        <div class="trait-body">
+                                            <div class="trait-header">
+                                                <h4 class="trait-name">脚踝扭伤</h4>
+                                                <span class="trait-badge trait-badge--debuff">Debuff</span>
+                                            </div>
+                                            <div class="trait-meta">
+                                                <span class="trait-remaining"><i data-lucide="hourglass" class="w-3 h-3"></i> 剩余 2 天</span>
+                                            </div>
+                                            <p class="trait-effect">健康 -10，两天内无法跑外卖。</p>
+                                        </div>
+                                    </article>
+
+                                    <article id="debuff-social-shock" class="trait-card trait-card--debuff">
+                                        <div class="trait-icon" aria-hidden="true">😰</div>
+                                        <div class="trait-body">
+                                            <div class="trait-header">
+                                                <h4 class="trait-name">社恐休克</h4>
+                                                <span class="trait-badge trait-badge--debuff">Debuff</span>
+                                            </div>
+                                            <div class="trait-meta">
+                                                <span class="trait-remaining"><i data-lucide="hourglass" class="w-3 h-3"></i> 剩余 1 天</span>
+                                            </div>
+                                            <p class="trait-effect">压力直接爆表，今天无法创作。</p>
+                                        </div>
+                                    </article>
+
+                                    <article id="special-cosplay-looks" class="trait-card trait-card--special">
+                                        <div class="trait-icon" aria-hidden="true">✨</div>
+                                        <div class="trait-body">
+                                            <div class="trait-header">
+                                                <h4 class="trait-name">圈内神仙颜值</h4>
+                                                <span class="trait-badge trait-badge--special">Special</span>
+                                            </div>
+                                            <div class="trait-meta">
+                                                <span class="trait-remaining"><i data-lucide="zap" class="w-3 h-3"></i> 剩余 1 次</span>
+                                            </div>
+                                            <p class="trait-effect">下次创作视觉 / 颜值类作品必得 SSR 灵感卡。</p>
+                                        </div>
+                                    </article>
+                                </div>
+
+                                <p class="trait-tip">
+                                    <i data-lucide="clock" class="w-3 h-3"></i>
+                                    特质会在每日结算时生效，到期自动移除。
+                                </p>
+                            </section>
+                        </div>
+
+                        <!-- 灵感卡占位 -->
+                        <div class="card mt-4">
+                            <h3 class="text-sm font-bold text-foreground mb-3">灵感卡包</h3>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div class="inspiration-slot filled">
+                                    <span class="inspiration-rarity rarity-ssr">SSR</span>
+                                    <span class="inspiration-name">漫展奇葩 Coser 现场大乱斗</span>
+                                </div>
+                                <div class="inspiration-slot empty">
+                                    <span class="text-xs text-muted-foreground">空位</span>
+                                </div>
+                            </div>
+                        </div>
+                    </aside>
+
+                    <!-- 中间：行动面板 -->
+                    <section class="game-col action-panel" id="day-actions">
+                        <div class="card h-full">
+                            <div class="flex items-center justify-between gap-3 mb-5">
+                                <div>
+                                    <h2 class="text-lg font-bold text-foreground">今日行动</h2>
+                                    <p class="text-xs text-muted-foreground mt-0.5">选择一项行动推进今天的生活</p>
+                                </div>
+                                <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-muted text-xs font-medium text-muted-foreground">
+                                    <i data-lucide="map-pin" class="w-3 h-3"></i>
+                                    家中
+                                </span>
+                            </div>
+
+                            <div class="action-grid">
+                                <button type="button" class="action-btn">
+                                    <span class="action-icon" aria-hidden="true">📝</span>
+                                    <span class="action-title">接稿写作</span>
+                                    <span class="action-cost">💰+80 · ⚡-20</span>
+                                </button>
+                                <button type="button" class="action-btn">
+                                    <span class="action-icon" aria-hidden="true">🛋️</span>
+                                    <span class="action-title">躺平休息</span>
+                                    <span class="action-cost">⚡+30 · 🧠-5</span>
+                                </button>
+                                <button type="button" class="action-btn">
+                                    <span class="action-icon" aria-hidden="true">🥡</span>
+                                    <span class="action-title">出门干饭</span>
+                                    <span class="action-cost">💰-40 · ❤️+10</span>
+                                </button>
+                                <button type="button" id="action-cosplay" class="action-btn highlighted">
+                                    <span class="action-icon" aria-hidden="true">🎭</span>
+                                    <span class="action-title">漫展 NPC 帮工</span>
+                                    <span class="action-cost">💰+180 · ⚡-40 · 高社交风险</span>
+                                    <span class="action-tag">事件链</span>
+                                </button>
+                                <button type="button" class="action-btn">
+                                    <span class="action-icon" aria-hidden="true">🎮</span>
+                                    <span class="action-title">游戏直播</span>
+                                    <span class="action-cost">💰+30 · ⚡-15</span>
+                                </button>
+                                <button type="button" class="action-btn">
+                                    <span class="action-icon" aria-hidden="true">🚶</span>
+                                    <span class="action-title">公园散步</span>
+                                    <span class="action-cost">❤️+5 · 🧠-10</span>
+                                </button>
+                            </div>
+
+                            <div class="mt-4 p-3 rounded-xl bg-error-bg/40 border border-error/20 text-xs text-foreground leading-relaxed">
+                                <strong>高体力消耗：</strong>精力消耗速度翻倍；但如果遇到粉丝合影，可大幅降低压力。
+                            </div>
+
+                            <div class="mt-5 p-4 rounded-xl bg-muted/60 border border-border">
+                                <h3 class="text-sm font-semibold text-foreground mb-1">今日推荐</h3>
+                                <p class="text-xs text-muted-foreground leading-relaxed">
+                                    漫展主办方急招 NPC，日结 ¥180 但要在厚重软甲里站一整天。社恐慎入。
+                                </p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- 右侧：游戏日志 -->
+                    <aside class="game-col game-log" id="game-log">
+                        <div class="card h-full">
+                            <h2 class="text-lg font-bold text-foreground mb-4">游戏日志</h2>
+                            <ul class="log-list">
+                                <li class="log-entry">
+                                    <span class="log-dot" style="background: var(--state-warning);"></span>
+                                    <div class="log-content">
+                                        <p class="log-text">穿上厚重的软甲，你立刻感到精力在加速流失。</p>
+                                        <time class="log-time">第 12 天 · 上午</time>
+                                    </div>
+                                </li>
+                                <li class="log-entry">
+                                    <span class="log-dot" style="background: var(--state-success);"></span>
+                                    <div class="log-content">
+                                        <p class="log-text">一位热情的粉丝冲上来合影，你意外获得了认同感，压力 -20。</p>
+                                        <time class="log-time">第 12 天 · 中午</time>
+                                    </div>
+                                </li>
+                                <li class="log-entry">
+                                    <span class="log-dot" style="background: var(--state-error);"></span>
+                                    <div class="log-content">
+                                        <p class="log-text">连续站立 6 小时后脚踝一阵剧痛，获得特质【脚踝扭伤】。</p>
+                                        <time class="log-time">第 12 天 · 下午</time>
+                                    </div>
+                                </li>
+                                <li class="log-entry">
+                                    <span class="log-dot" style="background: var(--state-error);"></span>
+                                    <div class="log-content">
+                                        <p class="log-text">被围住合影时大脑一片空白，获得特质【社恐休克】。</p>
+                                        <time class="log-time">第 12 天 · 傍晚</time>
+                                    </div>
+                                </li>
+                                <li class="log-entry">
+                                    <span class="log-dot" style="background: var(--brand-500);"></span>
+                                    <div class="log-content">
+                                        <p class="log-text">日结工资到账 ¥180。</p>
+                                        <time class="log-time">第 12 天 · 夜晚</time>
+                                    </div>
+                                </li>
+                            </ul>
+                        </div>
+                    </aside>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <style class="critical-layout">
+        .app-root { min-height: 100vh; display: flex; flex-direction: column; }
+        .top-header { flex: 0 0 auto; background: var(--brand-card); border-bottom: 1px solid var(--brand-border); box-shadow: var(--shadow-card); }
+        main { flex: 1 1 auto; min-width: 0; }
+        .game-layout { display: grid; grid-template-columns: minmax(280px, 320px) 1fr minmax(260px, 300px); gap: 1rem; align-items: start; }
+        .game-col { min-width: 0; }
+        @media (max-width: 1024px) { .game-layout { grid-template-columns: 1fr; } }
+    </style>
+
+    <style>
+        .game-tag { display: inline-flex; align-items: center; padding: 0.25rem 0.625rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 500; background: var(--brand-100); color: var(--brand-700); box-shadow: inset 0 0 0 1px var(--brand-200); }
+        .card { background: var(--brand-card); border-radius: var(--brand-radius-lg); box-shadow: var(--shadow-card); border: 1px solid var(--brand-border); padding: 1rem; }
+        .attr-row { display: grid; grid-template-columns: 4.5rem 1fr auto; align-items: center; gap: 0.75rem; }
+        .attr-label { font-size: 0.75rem; color: var(--brand-card-foreground); display: flex; align-items: center; gap: 0.25rem; }
+        .attr-bar-wrap { height: 0.5rem; background: var(--brand-muted); border-radius: 9999px; overflow: hidden; }
+        .attr-bar { height: 100%; width: var(--bar-pct); background: var(--bar-color); border-radius: 9999px; }
+        .attr-value { font-size: 0.75rem; font-weight: 600; color: var(--brand-card-foreground); min-width: 3.5rem; text-align: right; }
+
+        .trait-list { display: flex; flex-direction: column; gap: 0.75rem; }
+        .trait-card { display: flex; gap: 0.75rem; padding: 0.875rem; border-radius: var(--brand-radius-md); border: 1px solid var(--brand-border); background: var(--brand-card); }
+        .trait-card--buff { background: color-mix(in srgb, var(--state-success-bg) 35%, var(--brand-card)); border-color: color-mix(in srgb, var(--state-success) 20%, var(--brand-border)); }
+        .trait-card--debuff { background: color-mix(in srgb, var(--state-error-bg) 35%, var(--brand-card)); border-color: color-mix(in srgb, var(--state-error) 20%, var(--brand-border)); }
+        .trait-card--special { background: color-mix(in srgb, var(--state-info-bg) 35%, var(--brand-card)); border-color: color-mix(in srgb, var(--state-info) 20%, var(--brand-border)); }
+        .trait-icon { flex: 0 0 auto; width: 2.5rem; height: 2.5rem; display: flex; align-items: center; justify-content: center; font-size: 1.25rem; border-radius: var(--brand-radius-md); background: var(--brand-card); border: 1px solid var(--brand-border); }
+        .trait-body { flex: 1 1 auto; min-width: 0; }
+        .trait-header { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.25rem; }
+        .trait-name { font-size: 0.875rem; font-weight: 700; color: var(--brand-card-foreground); }
+        .trait-badge { font-size: 0.625rem; font-weight: 700; padding: 0.125rem 0.5rem; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.02em; }
+        .trait-badge--buff { background: var(--state-success-bg); color: var(--state-success); }
+        .trait-badge--debuff { background: var(--state-error-bg); color: var(--state-error); }
+        .trait-badge--special { background: var(--state-info-bg); color: var(--state-info); }
+        .trait-meta { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.375rem; }
+        .trait-remaining { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.75rem; color: var(--brand-muted-foreground); }
+        .trait-effect { font-size: 0.75rem; line-height: 1.4; color: var(--brand-card-foreground); }
+        .trait-tip { display: flex; align-items: flex-start; gap: 0.375rem; margin-top: 0.875rem; font-size: 0.75rem; color: var(--brand-muted-foreground); }
+
+        .inspiration-slot { min-height: 4rem; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 0.25rem; padding: 0.5rem; border-radius: var(--brand-radius-md); border: 1.5px dashed var(--brand-border); background: var(--brand-muted); }
+        .inspiration-slot.filled { background: color-mix(in srgb, var(--state-info-bg) 30%, var(--brand-card)); border-style: solid; border-color: color-mix(in srgb, var(--state-info) 20%, var(--brand-border)); }
+        .inspiration-rarity { font-size: 0.625rem; font-weight: 700; padding: 0.125rem 0.375rem; border-radius: 9999px; background: var(--state-info-bg); color: var(--state-info); }
+        .inspiration-name { font-size: 0.75rem; font-weight: 600; color: var(--brand-card-foreground); line-height: 1.3; }
+
+        .action-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.75rem; }
+        .action-btn { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 0.375rem; padding: 1rem 0.75rem; border-radius: var(--brand-radius-md); background: var(--brand-muted); border: 1px solid var(--brand-border); color: var(--brand-card-foreground); transition: background 0.15s ease, border-color 0.15s ease, transform 0.05s ease, box-shadow 0.15s ease; }
+        .action-btn:hover { background: var(--brand-50); border-color: var(--brand-300); }
+        .action-btn:active { transform: translateY(1px); }
+        .action-btn.highlighted { background: color-mix(in srgb, var(--brand-100) 60%, var(--brand-card)); border-color: var(--brand-400); box-shadow: 0 0 0 2px var(--brand-200); }
+        .action-icon { font-size: 1.5rem; line-height: 1; }
+        .action-title { font-size: 0.875rem; font-weight: 600; }
+        .action-cost { font-size: 0.65rem; color: var(--brand-muted-foreground); }
+        .action-tag { position: absolute; top: -0.375rem; right: -0.375rem; font-size: 0.625rem; font-weight: 700; padding: 0.125rem 0.375rem; border-radius: 9999px; background: var(--brand-500); color: var(--brand-primary-foreground); }
+
+        .log-list { display: flex; flex-direction: column; gap: 0.875rem; }
+        .log-entry { display: flex; gap: 0.75rem; }
+        .log-dot { flex: 0 0 auto; width: 0.5rem; height: 0.5rem; border-radius: 9999px; margin-top: 0.375rem; }
+        .log-content { flex: 1 1 auto; }
+        .log-text { font-size: 0.8125rem; line-height: 1.5; color: var(--brand-card-foreground); }
+        .log-time { display: block; font-size: 0.6875rem; color: var(--brand-muted-foreground); margin-top: 0.125rem; }
+
+        .bg-error-bg\/40 { background-color: color-mix(in srgb, var(--state-error-bg) 40%, transparent); }
+        .border-error\/20 { border-color: color-mix(in srgb, var(--state-error) 20%, transparent); }
+    </style>
+
+    <script>lucide.createIcons();</script>
+</body>
+</html>
