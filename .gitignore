@@ -1,0 +1,5 @@
+node_modules/.bin/autoprefixer
+*.html
+dist/assets/index-w8OgiDfp.js
+/dist
+/node_modules

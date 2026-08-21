@@ -1,0 +1,442 @@
+{
+  "skillProvenance": {
+    "name": "solo-design",
+    "version": "2026.07.06.8",
+    "version_source": "skill-release-manifest.json"
+  },
+  "project": {
+    "name": "特质状态面板 UI",
+    "projectName": "特质状态面板 UI",
+    "description": "为《毕业咸鱼模拟器》设计 StatusTrait（CK3 式特质）状态展示面板，并扩展展示漫展/Cosplay NPC 帮工与女仆咖啡厅/地下偶像现场 Staff 扩展包的 Trait、人设防线机制与行动卡。",
+    "designProjectPath": "d:\\Trae CN\\Genesis Tome\\全职咸鱼幻想录\\trait-status-panel",
+    "resolvedLane": "existing_edit_add_comparison",
+    "deviceType": "desktop",
+    "viewportMode": "document-scroll",
+    "intentProfile": {
+      "caseFamily": "existing_edit_add_comparison",
+      "routingReason": "在已创建的 trait-status-panel 设计项目基础上新增对比页，展示漫展 NPC 扩展包的特质与行动卡。"
+    },
+    "sourcePageId": "page-index",
+    "sourceHtmlSrc": "pages/index.html",
+    "derivationType": "comparison-page",
+    "inPlaceEditAllowed": false,
+    "selectedIntentWorkflowRead": true,
+    "contextRequirementsLoaded": [
+      {
+        "path": "shared-runtime/runtime-boundaries/lane-runtime-contracts.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      },
+      {
+        "path": "shared-runtime/agent-dispatch-runtime/lane-dispatch-index.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      },
+      {
+        "path": "shared-runtime/agent-dispatch-runtime/shared-page-rendering-kernel.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      },
+      {
+        "path": "delivery-quality/page-rendering-quality-gate.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      },
+      {
+        "path": "delivery-quality/design-artifact-validation.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      },
+      {
+        "path": "delivery-quality/delivery-evidence-contract.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      },
+      {
+        "path": "visual-experience/visual-experience-guidelines.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      },
+      {
+        "path": "intent-workflows/intent-project-mutation/INTENT_WORKFLOW.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      },
+      {
+        "path": "intent-workflows/intent-project-mutation/edit-existing-project.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      },
+      {
+        "path": "intent-workflows/intent-project-mutation/existing-edit-page-runtime.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      },
+      {
+        "path": "intent-workflows/intent-project-mutation/existing-edit-dispatch-contract.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      },
+      {
+        "path": "intent-workflows/intent-project-mutation/comparison-page-contract.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      }
+    ],
+    "contextReadScope": {
+      "mainAgent": {
+        "forbiddenReads": [
+          "other intent-workflows/**",
+          "Sub-Agent implementation files before dispatch"
+        ]
+      },
+      "pageSubAgent": {
+        "allowedReads": [
+          "current lane page runtime guide",
+          "current lane dispatch contract excerpt",
+          "current Page Packet",
+          "supplementaryReads[] only"
+        ],
+        "forbiddenReads": [
+          "SKILL.md full re-read",
+          "other intent-workflows/**",
+          "full runtime-orchestration-summary.json unless explicitly sliced"
+        ]
+      },
+      "readScopeLedgerWriter": "shared-runtime/deterministic-tooling/build-page-dispatch-manifest.mjs"
+    },
+    "validationRunDiscipline": {
+      "maxFullValidationRuns": 2,
+      "softWarningsTriggerRepair": false,
+      "blockingRepairMode": "targeted-once",
+      "forbiddenRepairTriggers": [
+        "soft-warning-only",
+        "provenance-warning-only",
+        "style-warning-only"
+      ]
+    },
+    "lowValueCallWatchdog": {
+      "applies": true,
+      "noProgressSignals": [
+        "no_tool_call",
+        "no_artifact_diff",
+        "no_structured_decision"
+      ],
+      "noProgressNextAction": "enter_readiness_or_blocked_summary"
+    },
+    "styleContinuityAnchors": {
+      "tone": "cozy-indie-game",
+      "basePalette": "slate-warm-neutral",
+      "primaryHue": "brand-amber",
+      "surfaceModel": "rounded-cards-soft-shadow",
+      "typography": "Inter + Noto Sans SC",
+      "radiusScale": "8-16px",
+      "iconStyle": "emoji + lucide hybrid"
+    },
+    "creativeRecipe": {
+      "businessTone": "独立游戏 / 轻松治愈但带现实压力的模拟器",
+      "layoutArchetype": "侧边状态面板 + 特质详情卡片",
+      "visualSignature": "圆润卡片、柔和阴影、emoji 图标、 Buff 绿 / Debuff 红 / Special 紫 三色状态区分",
+      "densityTarget": "balanced",
+      "avoidOneThing": "避免复杂数据表格，保持游戏 UI 的轻松可读"
+    },
+    "cssPreflightEvidence": {
+      "applies": true,
+      "status": "passed",
+      "command": "node c:\\Users\\HASEE\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs d:\\Trae CN\\Genesis Tome\\全职咸鱼幻想录\\trait-status-panel\\colors_and_type.css d:\\Trae CN\\Genesis Tome\\全职咸鱼幻想录\\trait-status-panel\\.preflight\\preflight.html --title=\"Preflight\" --lang=zh-CN --prefix=brand",
+      "brandPrefix": "brand",
+      "checks": {
+        "themeVars": "present",
+        "semanticTokenFallback": "present",
+        "themeInline": "present",
+        "tailwindCdn": "present",
+        "htmlClass": "present",
+        "semanticMappings": "resolved"
+      },
+      "retryCount": 0,
+      "blockingReason": null
+    },
+    "dispatchPreflightManifest": [
+      {
+        "recorded_at": "2026-08-09T09:02:58.757Z",
+        "generatedBy": "build-page-dispatch-manifest.mjs",
+        "packetType": "FreePagePacket",
+        "laneContract": {
+          "resolvedLane": "free_exploration",
+          "packetType": "FreePagePacket",
+          "pageRuntimeGuide": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+          "dispatchContract": "intent-workflows/intent-page-free-exploration/dispatch-contract.md"
+        },
+        "nodeId": "page-index",
+        "htmlSrc": "pages/index.html",
+        "supplementaryReads": [],
+        "allowedWritePaths": [
+          "pages/index.html",
+          "assets/"
+        ],
+        "toolPolicy": {
+          "todoWriteAllowed": false,
+          "validationScriptsAllowed": false,
+          "previewAllowed": false,
+          "helperScriptsAllowed": false,
+          "designFileWriteAllowed": false,
+          "allowedWritePaths": [
+            "pages/index.html",
+            "assets/"
+          ]
+        },
+        "fillHtmlHeadCommand": "node \"c:\\Users\\HASEE\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs\" \"d:\\Trae CN\\Genesis Tome\\全职咸鱼幻想录\\trait-status-panel\\colors_and_type.css\" \"d:\\Trae CN\\Genesis Tome\\全职咸鱼幻想录\\trait-status-panel\\pages\\index.html\" --title=\"特质状态面板\" --lang=\"zh-CN\" --prefix=\"brand\"",
+        "cssPreflightStatus": "passed",
+        "completionSchemaExpected": "compact"
+      },
+      {
+        "recorded_at": "2026-08-09T09:13:00.000Z",
+        "generatedBy": "main-agent",
+        "packetType": "ExistingEditPagePacket",
+        "laneContract": {
+          "resolvedLane": "existing_edit_add_comparison",
+          "packetType": "ExistingEditPagePacket",
+          "pageRuntimeGuide": "intent-workflows/intent-project-mutation/existing-edit-page-runtime.md",
+          "dispatchContract": "intent-workflows/intent-project-mutation/existing-edit-dispatch-contract.md"
+        },
+        "nodeId": "page-cosplay-expansion",
+        "htmlSrc": "pages/cosplay-expansion.html",
+        "sourcePageId": "page-index",
+        "sourceHtmlSrc": "pages/index.html",
+        "derivationType": "comparison-page",
+        "supplementaryReads": [],
+        "allowedWritePaths": [
+          "pages/cosplay-expansion.html",
+          "assets/"
+        ],
+        "toolPolicy": {
+          "todoWriteAllowed": false,
+          "validationScriptsAllowed": false,
+          "previewAllowed": false,
+          "helperScriptsAllowed": false,
+          "designFileWriteAllowed": false,
+          "allowedWritePaths": [
+            "pages/cosplay-expansion.html",
+            "assets/"
+          ]
+        },
+        "fillHtmlHeadCommand": "node \"c:\\Users\\HASEE\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs\" \"d:\\Trae CN\\Genesis Tome\\全职咸鱼幻想录\\trait-status-panel\\colors_and_type.css\" \"d:\\Trae CN\\Genesis Tome\\全职咸鱼幻想录\\trait-status-panel\\pages\\cosplay-expansion.html\" --title=\"特质面板 - 漫展 NPC 扩展\" --lang=\"zh-CN\" --prefix=\"brand\"",
+        "cssPreflightStatus": "passed",
+        "completionSchemaExpected": "compact"
+      },
+      {
+        "recorded_at": "2026-08-09T09:35:00.000Z",
+        "generatedBy": "main-agent",
+        "packetType": "ExistingEditPagePacket",
+        "laneContract": {
+          "resolvedLane": "existing_edit_add_comparison",
+          "packetType": "ExistingEditPagePacket",
+          "pageRuntimeGuide": "intent-workflows/intent-project-mutation/existing-edit-page-runtime.md",
+          "dispatchContract": "intent-workflows/intent-project-mutation/existing-edit-dispatch-contract.md"
+        },
+        "nodeId": "page-maid-cafe-expansion",
+        "htmlSrc": "pages/maid-cafe-expansion.html",
+        "sourcePageId": "page-index",
+        "sourceHtmlSrc": "pages/index.html",
+        "derivationType": "comparison-page",
+        "supplementaryReads": [],
+        "allowedWritePaths": [
+          "pages/maid-cafe-expansion.html",
+          "assets/"
+        ],
+        "toolPolicy": {
+          "todoWriteAllowed": false,
+          "validationScriptsAllowed": false,
+          "previewAllowed": false,
+          "helperScriptsAllowed": false,
+          "designFileWriteAllowed": false,
+          "allowedWritePaths": [
+            "pages/maid-cafe-expansion.html",
+            "assets/"
+          ]
+        },
+        "fillHtmlHeadCommand": "node \"c:\\Users\\HASEE\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs\" \"d:\\Trae CN\\Genesis Tome\\全职咸鱼幻想录\\trait-status-panel\\colors_and_type.css\" \"d:\\Trae CN\\Genesis Tome\\全职咸鱼幻想录\\trait-status-panel\\pages\\maid-cafe-expansion.html\" --title=\"特质面板 - 女仆咖啡厅扩展\" --lang=\"zh-CN\" --prefix=\"brand\"",
+        "cssPreflightStatus": "passed",
+        "completionSchemaExpected": "compact"
+      }
+    ],
+    "defaultDeliverableVisibility": {
+      "applies": true,
+      "requiredVisibleRegions": [
+        {
+          "htmlSrc": "pages/cosplay-expansion.html",
+          "selector": "#traits-section",
+          "label": "特质状态展示栏",
+          "source": "user requirement"
+        },
+        {
+          "htmlSrc": "pages/cosplay-expansion.html",
+          "selector": "#debuff-sprain",
+          "label": "Debuff 特质：脚踝扭伤",
+          "source": "user requirement"
+        },
+        {
+          "htmlSrc": "pages/cosplay-expansion.html",
+          "selector": "#debuff-social-shock",
+          "label": "Debuff 特质：社恐休克",
+          "source": "user requirement"
+        },
+        {
+          "htmlSrc": "pages/cosplay-expansion.html",
+          "selector": "#action-cosplay",
+          "label": "漫展 NPC 帮工行动卡",
+          "source": "user requirement"
+        },
+        {
+          "htmlSrc": "pages/maid-cafe-expansion.html",
+          "selector": "#persona-shield",
+          "label": "人设防线机制展示",
+          "source": "user requirement"
+        },
+        {
+          "htmlSrc": "pages/maid-cafe-expansion.html",
+          "selector": "#traits-section",
+          "label": "特质状态展示栏",
+          "source": "user requirement"
+        },
+        {
+          "htmlSrc": "pages/maid-cafe-expansion.html",
+          "selector": "#special-moe-brainwash",
+          "label": "Special 特质：萌系洗脑中",
+          "source": "user requirement"
+        },
+        {
+          "htmlSrc": "pages/maid-cafe-expansion.html",
+          "selector": "#debuff-humanity-disillusion",
+          "label": "Debuff 特质：人性幻灭",
+          "source": "user requirement"
+        },
+        {
+          "htmlSrc": "pages/maid-cafe-expansion.html",
+          "selector": "#action-maid-cafe",
+          "label": "女仆咖啡厅帮工行动卡",
+          "source": "user requirement"
+        }
+      ],
+      "hiddenAllowed": []
+    },
+    "pageCompletenessGate": {
+      "expectedPages": [
+        "index",
+        "cosplay-expansion",
+        "maid-cafe-expansion"
+      ],
+      "requiredStates": [],
+      "requiredInteractions": [],
+      "requiredNavigation": [],
+      "missingAllowed": []
+    },
+    "expectedDispatches": [
+      {
+        "nodeId": "page-index",
+        "packetType": "FreePagePacket",
+        "status": "completed",
+        "changedFiles": [
+          "pages/index.html"
+        ],
+        "toolCallLedger": {
+          "source": "main-agent-runtime-trace",
+          "traceDigest": "19965aaf344280210f4569d022ea1879005b6a68fb934b1b2137713eeeb31c0d",
+          "todoWriteCalls": 0,
+          "previewCalls": 0,
+          "validationScriptCalls": 0,
+          "helperScriptWrites": 0
+        }
+      },
+      {
+        "nodeId": "page-cosplay-expansion",
+        "pageId": "page-cosplay-expansion",
+        "targetPageId": "page-cosplay-expansion",
+        "htmlSrc": "pages/cosplay-expansion.html",
+        "packetType": "ExistingEditPagePacket",
+        "status": "completed",
+        "changedFiles": [
+          "pages/cosplay-expansion.html"
+        ],
+        "toolCallLedger": {
+          "source": "main-agent-runtime-trace",
+          "traceDigest": "19965aaf344280210f4569d022ea1879005b6a68fb934b1b2137713eeeb31c0d",
+          "todoWriteCalls": 0,
+          "previewCalls": 0,
+          "validationScriptCalls": 0,
+          "helperScriptWrites": 0
+        },
+        "recordedAt": "2026-08-09T09:23:03.520Z",
+        "source": "record-dispatch-completion.mjs"
+      },
+      {
+        "nodeId": "page-maid-cafe-expansion",
+        "pageId": "page-maid-cafe-expansion",
+        "targetPageId": "page-maid-cafe-expansion",
+        "htmlSrc": "pages/maid-cafe-expansion.html",
+        "packetType": "ExistingEditPagePacket",
+        "status": "completed",
+        "changedFiles": [
+          "pages/maid-cafe-expansion.html"
+        ],
+        "toolCallLedger": {
+          "source": "main-agent-runtime-trace",
+          "traceDigest": "19965aaf344280210f4569d022ea1879005b6a68fb934b1b2137713eeeb31c0d",
+          "todoWriteCalls": 0,
+          "previewCalls": 0,
+          "validationScriptCalls": 0,
+          "helperScriptWrites": 0
+        },
+        "recordedAt": "2026-08-09T09:40:00.000Z",
+        "source": "record-dispatch-completion.mjs"
+      }
+    ],
+    "mainAgentPostDispatchMutations": []
+  },
+  "pages": [
+    {
+      "nodeId": "page-index",
+      "htmlSrc": "pages/index.html",
+      "title": "特质状态面板",
+      "stateRole": "base",
+      "qualityRisks": [
+        "游戏风格需与现有 React 项目保持一致"
+      ]
+    },
+    {
+      "nodeId": "page-cosplay-expansion",
+      "htmlSrc": "pages/cosplay-expansion.html",
+      "title": "特质面板 - 漫展 NPC 扩展",
+      "stateRole": "derived",
+      "derivedFromHtmlSrc": "pages/index.html",
+      "mutableRegions": [
+        "traits list",
+        "action grid",
+        "game log",
+        "daily recommendation"
+      ],
+      "qualityRisks": [
+        "保持与源页一致的视觉系统",
+        "清晰展示漫展扩展独特机制"
+      ]
+    },
+    {
+      "nodeId": "page-maid-cafe-expansion",
+      "htmlSrc": "pages/maid-cafe-expansion.html",
+      "title": "特质面板 - 女仆咖啡厅扩展",
+      "stateRole": "derived",
+      "derivedFromHtmlSrc": "pages/index.html",
+      "mutableRegions": [
+        "traits list",
+        "action grid",
+        "game log",
+        "daily recommendation",
+        "persona shield"
+      ],
+      "qualityRisks": [
+        "保持与源页一致的视觉系统",
+        "清晰展示女仆咖啡厅扩展独特机制与人设防线"
+      ]
+    }
+  ]
+}
