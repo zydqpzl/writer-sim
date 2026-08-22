@@ -128,9 +128,9 @@ export const INITIAL_STATE: GameState = {
 export const ACTIONS: ActionDef[] = [
   {
     type: 'work',
-    label: '创作 / 工作',
-    desc: '推进作品进度，积累职业经验，但有概率产生收益。',
-    icon: '✍️',
+    label: '灵感创作',
+    desc: '消耗一张灵感卡牌，进行 70/30 的赌博式创作，不占用连载项目。',
+    icon: '✨',
     accent: 'brand',
     effects: {
       savings: 0,

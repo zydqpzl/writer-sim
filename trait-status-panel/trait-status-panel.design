@@ -1,7 +1,4 @@
 {
-  "name": "特质状态面板 UI",
-  "version": 1,
-  "description": "毕业咸鱼模拟器 StatusTrait 状态面板设计稿",
   "data": [
     {
       "id": "page-index",
@@ -9,14 +6,21 @@
       "type": "page",
       "version": 1,
       "createdAt": 1786266013000,
-      "devMetadata": {
-        "htmlSrc": "pages/index.html",
-        "interactions": []
-      },
       "canvasData": {
         "x": 0,
         "y": 0,
-        "group": 0
+        "group": 0,
+        "layoutSnapshot": {
+          "version": 1,
+          "contentHeight": 900,
+          "viewportWidth": 1440,
+          "sourceHash": "fnv1a-8b2dbe17",
+          "measuredAt": 1787333837944
+        }
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/index.html",
+        "interactions": []
       }
     },
     {
@@ -25,17 +29,21 @@
       "type": "page",
       "version": 1,
       "createdAt": 1786266389000,
+      "canvasData": {
+        "x": 480,
+        "y": 0,
+        "group": 0,
+        "layoutSnapshot": {
+          "version": 1,
+          "contentHeight": 900,
+          "viewportWidth": 1440,
+          "sourceHash": "fnv1a-ee37a2aa",
+          "measuredAt": 1787333837944
+        }
+      },
       "devMetadata": {
         "htmlSrc": "pages/cosplay-expansion.html",
-        "interactions": [],
-        "derivationType": "comparison-page",
-        "sourcePageId": "page-index",
-        "sourceHtmlSrc": "pages/index.html"
-      },
-      "canvasData": {
-        "x": 0,
-        "y": 0,
-        "group": 0
+        "interactions": []
       }
     },
     {
@@ -44,17 +52,21 @@
       "type": "page",
       "version": 1,
       "createdAt": 1786269500000,
+      "canvasData": {
+        "x": 960,
+        "y": 0,
+        "group": 0,
+        "layoutSnapshot": {
+          "version": 1,
+          "contentHeight": 900,
+          "viewportWidth": 1440,
+          "sourceHash": "fnv1a-44c6e778",
+          "measuredAt": 1787333837944
+        }
+      },
       "devMetadata": {
         "htmlSrc": "pages/maid-cafe-expansion.html",
-        "interactions": [],
-        "derivationType": "comparison-page",
-        "sourcePageId": "page-index",
-        "sourceHtmlSrc": "pages/index.html"
-      },
-      "canvasData": {
-        "x": 0,
-        "y": 0,
-        "group": 0
+        "interactions": []
       }
     }
   ],

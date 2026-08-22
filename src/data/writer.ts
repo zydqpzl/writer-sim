@@ -67,7 +67,7 @@ export function generateWriterTitle(rng: () => number = Math.random): string {
   const gf = GOLD_FINGERS[Math.floor(rng() * GOLD_FINGERS.length)]
   const id = IDENTITIES[Math.floor(rng() * IDENTITIES.length)]
   const act = ACTIONS[Math.floor(rng() * ACTIONS.length)]
-  return `《${gf}${id}${act}》`
+  return `${gf}${id}${act}`
 }
 
 /* ============== 写作策略配置（用于 UI 文案） ============== */

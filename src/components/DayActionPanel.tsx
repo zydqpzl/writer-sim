@@ -1,4 +1,5 @@
 import type { ActionDef, GameState, TimeSlot } from '../types/game'
+import type { WriterProject } from '../types/career'
 
 interface Props {
   state: GameState
@@ -10,9 +11,12 @@ interface Props {
   warningLine: number
   /** 现实的铁拳阈值 */
   realityPunchThreshold: number
+  activeProject?: WriterProject
   onChoose: (action: ActionDef) => void
-  /** 点击创作卡时打开创作工坊 */
+  /** 点击灵感创作卡时打开创作工坊 */
   onStartWork: () => void
+  /** 打开写作工坊（开新书 / 更新连载） */
+  onOpenWriterWork: () => void
   onEmergency: () => void
   onNext: () => void
 }
@@ -87,8 +91,10 @@ export default function DayActionPanel({
   emergencyAction,
   warningLine,
   realityPunchThreshold,
+  activeProject,
   onChoose,
   onStartWork,
+  onOpenWriterWork,
   onEmergency,
   onNext,
 }: Props) {
@@ -253,6 +259,54 @@ export default function DayActionPanel({
             </button>
           )
         })}
+
+        {/* 网络作家主入口：开新书 / 更新连载 */}
+        <button
+          type="button"
+          disabled={actedThisSlot}
+          onClick={onOpenWriterWork}
+          className={[
+            'group relative mt-3 flex flex-col rounded-2xl border p-4 text-left transition-all',
+            actedThisSlot
+              ? 'cursor-not-allowed border-slate-200 bg-slate-50 opacity-60'
+              : 'border-brand-200 bg-brand-50/30 hover:-translate-y-0.5 hover:border-brand-300 hover:bg-brand-50/50',
+          ].join(' ')}
+        >
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-100 text-xl text-brand-600">
+              ✍️
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold text-slate-800">
+                {activeProject ? '写作 / 更新' : '开一本新书'}
+              </div>
+              <div className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-slate-500">
+                {activeProject
+                  ? `推进《${activeProject.title}》进度，选择写作策略或注入灵感。`
+                  : '选择平台开始连载网络小说，签约、上架、赚取稿费。'}
+              </div>
+            </div>
+          </div>
+          {activeProject && (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              <span className="chip bg-white text-brand-600 text-[10px] ring-1 ring-inset ring-brand-200/70">
+                {(activeProject.wordCount / 10000).toFixed(1)} 万字
+              </span>
+              <span className="chip bg-white text-brand-600 text-[10px] ring-1 ring-inset ring-brand-200/70">
+                {activeProject.totalChapters} 章
+              </span>
+              <span className="chip bg-white text-brand-600 text-[10px] ring-1 ring-inset ring-brand-200/70">
+                {activeProject.stage === 'CONCEPT'
+                  ? '投稿签约期'
+                  : activeProject.stage === 'SIGNED'
+                    ? '已签约'
+                    : activeProject.stage === 'LAUNCHED'
+                      ? '已上架'
+                      : '连载中'}
+              </span>
+            </div>
+          )}
+        </button>
       </div>
 
       {/* 兼职通道：保命 + 奇遇 */}

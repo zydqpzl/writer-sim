@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import CreationModal from './components/CreationModal'
 import DayActionPanel from './components/DayActionPanel'
+import WriterWorkModal from './components/WriterWorkModal'
 import EncounterBanner from './components/EncounterBanner'
 import EndingModal from './components/EndingModal'
 import EventChainModal from './components/EventChainModal'
@@ -61,7 +62,13 @@ export default function App() {
     applyMemeHomageToActiveProject,
   } = useGame()
 
+  const activeProject = state.careerProjects.find(
+    (p): p is WriterProject =>
+      isWriterProject(p) && p.stage !== 'COMPLETED' && p.stage !== 'ABANDONED',
+  )
+
   const [creationOpen, setCreationOpen] = useState(false)
+  const [writerWorkOpen, setWriterWorkOpen] = useState(false)
   const [debugOpen, setDebugOpen] = useState(false)
   // 若本地已保存携带卡牌且已有回响，说明上一局已结算但尚未开始新局，优先展示 setup
   const [setupOpen, setSetupOpen] = useState(
@@ -419,15 +426,7 @@ export default function App() {
               maxEnergy={maxEnergy}
               maxStress={maxStress}
             />
-            <WriterProjectPanel
-              project={state.careerProjects.find(
-                (p): p is WriterProject =>
-                  isWriterProject(p) &&
-                  p.stage !== 'COMPLETED' &&
-                  p.stage !== 'ABANDONED',
-              )}
-              logs={logs}
-            />
+            <WriterProjectPanel project={activeProject} logs={logs} />
           </aside>
 
           {/* 中间：每日行动选择 */}
@@ -439,30 +438,29 @@ export default function App() {
               emergencyAction={emergencyAction}
               warningLine={PART_TIME_WARNING_LINE}
               realityPunchThreshold={REALITY_PUNCH_THRESHOLD}
+              activeProject={activeProject}
               onChoose={chooseAction}
               onStartWork={() => setCreationOpen(true)}
+              onOpenWriterWork={() => setWriterWorkOpen(true)}
               onEmergency={doEmergencyPartTime}
               onNext={advance}
             />
           </div>
 
-          {/* 右侧：游戏日志 + 网文江湖 */}
-          <div className="flex flex-col gap-5 lg:col-span-3">
-            <div className="h-[420px] lg:h-[calc(100vh-9rem)] lg:min-h-[480px] lg:sticky lg:top-20">
+          {/* 右侧：游戏日志 + 网文江湖，桌面固定高度内部滚动，避免与主内容重叠 */}
+          <div className="flex flex-col gap-5 lg:col-span-3 lg:sticky lg:top-20 lg:h-[calc(100vh-9rem)] lg:min-h-[480px] lg:overflow-hidden">
+            <div className="h-[420px] lg:h-auto lg:flex-[45] lg:min-h-0">
               <GameLog logs={logs} />
             </div>
-            <PlatformEcosystemPanel
-              npcs={state.platformEcosystem.npcs}
-              leaderboards={state.platformEcosystem.leaderboards}
-              interactions={state.platformEcosystem.interactions}
-              memeTrends={state.platformEcosystem.memeTrends}
-              activeProject={state.careerProjects.find(
-                (p): p is WriterProject =>
-                  isWriterProject(p) &&
-                  p.stage !== 'COMPLETED' &&
-                  p.stage !== 'ABANDONED',
-              )}
-            />
+            <div className="min-h-[360px] lg:flex-[55] lg:min-h-0">
+              <PlatformEcosystemPanel
+                npcs={state.platformEcosystem.npcs}
+                leaderboards={state.platformEcosystem.leaderboards}
+                interactions={state.platformEcosystem.interactions}
+                memeTrends={state.platformEcosystem.memeTrends}
+                activeProject={activeProject}
+              />
+            </div>
           </div>
         </div>
       </main>
@@ -482,6 +480,45 @@ export default function App() {
           onClose={() => setCreationOpen(false)}
         />
       )}
+
+      {/* 网络作家写作工坊：开新书 / 更新连载 / 完本太监 */}
+      <WriterWorkModal
+        isOpen={writerWorkOpen}
+        onClose={() => setWriterWorkOpen(false)}
+        activeProject={activeProject}
+        platforms={PLATFORM_LIST}
+        inspirations={state.inspirations}
+        unlockedMemes={state.unlockedMemes}
+        energy={state.stats.energy}
+        stress={state.stats.stress}
+        maxEnergy={maxEnergy}
+        maxStress={maxStress}
+        actedThisSlot={state.actedThisSlot}
+        onStartProject={(platformId) => {
+          startWriterProject({ platformId })
+          setWriterWorkOpen(false)
+        }}
+        onApplyStrategy={(actionId) => {
+          applyWriterStrategy(actionId)
+          setWriterWorkOpen(false)
+        }}
+        onInjectInspiration={(inspirationId) => {
+          applyInspirationToActiveProject(inspirationId)
+          setWriterWorkOpen(false)
+        }}
+        onHomageMeme={(memeId) => {
+          applyMemeHomageToActiveProject(memeId)
+          setWriterWorkOpen(false)
+        }}
+        onCompleteProject={() => {
+          completeActiveWriterProject()
+          setWriterWorkOpen(false)
+        }}
+        onAbandonProject={() => {
+          abandonActiveWriterProject()
+          setWriterWorkOpen(false)
+        }}
+      />
 
       {/* 事件链弹窗（进行中） */}
       {currentChain && currentStep && (
