@@ -58,8 +58,10 @@ export default function App() {
     debugAddStress,
     debugSetStress,
     debugTriggerBreakdown,
+    debugGrantTrait,
     debugStartWriterEventChain,
     applyMemeHomageToActiveProject,
+    authorProfile,
   } = useGame()
 
   const activeProject = state.careerProjects.find(
@@ -426,7 +428,12 @@ export default function App() {
               maxEnergy={maxEnergy}
               maxStress={maxStress}
             />
-            <WriterProjectPanel project={activeProject} logs={logs} />
+            <WriterProjectPanel
+              project={activeProject}
+              logs={logs}
+              marketTrend={state.marketTrend}
+              authorProfile={authorProfile}
+            />
           </aside>
 
           {/* 中间：每日行动选择 */}
@@ -487,6 +494,7 @@ export default function App() {
         onClose={() => setWriterWorkOpen(false)}
         activeProject={activeProject}
         platforms={PLATFORM_LIST}
+        marketTrend={state.marketTrend}
         inspirations={state.inspirations}
         unlockedMemes={state.unlockedMemes}
         energy={state.stats.energy}
@@ -494,8 +502,10 @@ export default function App() {
         maxEnergy={maxEnergy}
         maxStress={maxStress}
         actedThisSlot={state.actedThisSlot}
-        onStartProject={(platformId) => {
-          startWriterProject({ platformId })
+        writerCareerProfile={state.writerCareerProfile}
+        authorProfile={authorProfile}
+        onStartProject={(platformId, draft) => {
+          startWriterProject({ platformId, draft })
           setWriterWorkOpen(false)
         }}
         onApplyStrategy={(actionId) => {

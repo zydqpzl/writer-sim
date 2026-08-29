@@ -1,6 +1,16 @@
 // 网络作家（WRITER）职业数据配置
 
-import type { WriterAction, WriterStrategyConfig } from '../types/career'
+import type {
+  BookCreationDraft,
+  BookTag,
+  MainGenre,
+  MarketTrend,
+  WriterAction,
+  WriterStrategyConfig,
+} from '../types/career'
+import { BOOK_TAGS, isTagCompatibleWithGenre } from './bookTags'
+import { GENRES } from './genres'
+import { GIMMICKS } from './gimmicks'
 
 /* ============== 核心数值参数 ============== */
 
@@ -63,11 +73,68 @@ const ACTIONS = [
   '靠吐槽封神',
 ]
 
-export function generateWriterTitle(rng: () => number = Math.random): string {
-  const gf = GOLD_FINGERS[Math.floor(rng() * GOLD_FINGERS.length)]
-  const id = IDENTITIES[Math.floor(rng() * IDENTITIES.length)]
-  const act = ACTIONS[Math.floor(rng() * ACTIONS.length)]
+function randomPick<T>(arr: T[], rng: () => number = Math.random): T {
+  return arr[Math.floor(rng() * arr.length)]
+}
+
+export function generateWriterTitle(
+  draft?: BookCreationDraft,
+  rng: () => number = Math.random,
+): string {
+  if (draft?.title) return draft.title
+  const gf = randomPick(GOLD_FINGERS, rng)
+  const id = randomPick(IDENTITIES, rng)
+  const act = randomPick(ACTIONS, rng)
   return `${gf}${id}${act}`
+}
+
+/** 抽取与题材兼容的标签 */
+function sampleCompatibleTags(
+  genre: MainGenre,
+  rng: () => number = Math.random,
+  count: number = 2,
+): string[] {
+  const compatible = BOOK_TAGS.filter((t) => isTagCompatibleWithGenre(t, genre))
+  const shuffled = [...compatible].sort(() => rng() - 0.5)
+  return shuffled.slice(0, count).map((t) => t.id)
+}
+
+/** 随机生成一份新书方案 */
+export function generateRandomDraft(
+  rng: () => number = Math.random,
+): BookCreationDraft {
+  const genre = randomPick(GENRES, rng).id
+  return {
+    penName: '咸鱼作者',
+    title: generateWriterTitle(undefined, rng),
+    genre,
+    tags: sampleCompatibleTags(genre, rng, 2),
+    gimmick: randomPick(GIMMICKS, rng).id,
+    isBlackHorseTarget: false,
+  }
+}
+
+/** 根据当前市场趋势生成一份跟风方案 */
+export function generateTrendFollowingDraft(
+  trend: MarketTrend,
+  rng: () => number = Math.random,
+): BookCreationDraft {
+  const genre = randomPick(trend.hotGenres, rng) ?? randomPick(GENRES, rng).id
+  const tags: string[] = [...trend.hotTags]
+  if (tags.length < 3) {
+    const extra = sampleCompatibleTags(genre, rng, 3 - tags.length).filter(
+      (t) => !tags.includes(t),
+    )
+    tags.push(...extra)
+  }
+  return {
+    penName: '跟风作者',
+    title: generateWriterTitle(undefined, rng),
+    genre,
+    tags: tags.slice(0, 3),
+    gimmick: randomPick(trend.hotGimmicks, rng) ?? randomPick(GIMMICKS, rng).id,
+    isBlackHorseTarget: false,
+  }
 }
 
 /* ============== 写作策略配置（用于 UI 文案） ============== */

@@ -3,6 +3,7 @@ import type {
   AuthorMeme,
   AuthorRank,
   CareerProject,
+  MarketTrend,
   WritingInspiration,
 } from './career'
 import type { InspirationCard } from './event'
@@ -148,6 +149,12 @@ export interface GameState {
   authorRank: AuthorRank
   /** 网文江湖：平台生态、NPC 同行与排行榜 */
   platformEcosystem: PlatformEcosystemState
+  /** 当前市场流行趋势（影响新书立项与连载收益） */
+  marketTrend: MarketTrend
+  /** 玩家作者档案（五维技能 + 履历背景 + 进化阶段） */
+  authorProfile: import('./career').AuthorProfile
+  /** 玩家网络作家生涯档案（跨作品持久） */
+  writerCareerProfile: import('./career').WriterCareerProfile
 }
 
 /** 日志条目类型 */

@@ -1,5 +1,6 @@
 // 网文江湖：平台生态、NPC 同行与排行榜模拟引擎
 
+import { getTrendMatches } from '../data/marketTrends'
 import { PLATFORMS } from '../data/platforms'
 import type {
   BoardType,
@@ -15,7 +16,7 @@ import type {
   PlatformMemeTrend,
   PlatformRumor,
 } from '../types/platform'
-import type { AuthorMeme, WriterProject } from '../types/career'
+import type { AuthorMeme, MarketTrend, WriterProject } from '../types/career'
 
 let npcIdSeed = 1
 let rumorIdSeed = 1
@@ -588,19 +589,43 @@ export function processNPCInteractions(
  * 跨作品梗传播机制
  * ============================================================ */
 
-/** 计算作品与平台算法的匹配度（0-100） */
+/** 计算作品与平台算法的匹配度（0-100）
+ *  流体公式：平台偏好 × 三维 + 市场趋势加成 - 趋势饱和度 + 黑马突破
+ */
 export function computeAlgorithmMatchScore(
   project: WriterProject,
   platform: NovelPlatform,
+  trend?: MarketTrend,
 ): number {
   const af = platform.algorithmFocus
-  return clamp(
+  let score =
     project.quality * af.quality +
-      project.commerciality * af.commerciality +
-      project.memeValue * af.memeValue,
-    0,
-    100,
-  )
+    project.commerciality * af.commerciality +
+    project.memeValue * af.memeValue
+
+  if (trend) {
+    const matches = getTrendMatches(project, trend)
+    const matchCount =
+      matches.genres.length + matches.tags.length + matches.gimmicks.length
+    // 每个匹配提供基础加成，但饱和度会削弱
+    const saturation =
+      [...matches.genres, ...matches.tags, ...matches.gimmicks].reduce(
+        (sum, key) => sum + (trend.saturation[key] ?? 0),
+        0,
+      ) / Math.max(1, matchCount)
+    const trendBonus = Math.min(22, matchCount * 8) * (1 - Math.min(0.7, saturation * 0.08))
+    score += trendBonus
+  }
+
+  // 黑马突破：高风险脑洞组合 + 质量/爆点过硬 = 额外爆发
+  if (
+    project.blackHorseTriggered &&
+    (project.quality + project.memeValue) / 2 >= 60
+  ) {
+    score += 12
+  }
+
+  return clamp(score, 0, 100)
 }
 
 /** 模拟梗在平台生态中的传播 */

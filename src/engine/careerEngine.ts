@@ -2,19 +2,45 @@
 
 import type {
   AuthorMeme,
+  AuthorProfile,
   AuthorRank,
+  AuthorSkills,
+  BackgroundBonus,
+  BackgroundTag,
+  BookCreationDraft,
   CareerActionResult,
   CareerDailyResult,
+  ComplexityTier,
+  ExecutionCheckResult,
+  GenreMastery,
+  GrowthCurveType,
   InspirationApplyResult,
+  MainGenre,
+  MarketTrend,
   MemeGenerateResult,
+  NovelComplexity,
   ProjectPhase,
+  WordOfMouthPool,
   WriterAction,
+  WriterCareerProfile,
   WriterProject,
+  WriterStrategy,
 } from '../types/career'
+import { BOOK_TAG_BY_ID } from '../data/bookTags'
+import {
+  BACKGROUND_TAGS,
+  BACKGROUND_TAG_BY_ID,
+  DOMAIN_LABELS,
+  findGenreSynergies,
+} from '../data/backgrounds'
+import { GENRE_BY_ID } from '../data/genres'
+import { GIMMICK_BY_ID } from '../data/gimmicks'
 import { INSPIRATION_BY_ID } from '../data/inspirations'
 import { PLATFORMS } from '../data/platforms'
 import { computeAlgorithmMatchScore } from './platformEngine'
 import type { NovelPlatform, NovelPlatformId } from '../types/platform'
+import { GROWTH_CURVE_BY_ID } from '../data/growthCurves'
+import { NOVEL_STYLE_TRAITS, NOVEL_STYLE_TRAIT_BY_ID } from '../data/novelStyleTraits'
 import {
   WRITER_ABANDON_RETENTION_PENALTY,
   WRITER_BASE_HYPE,
@@ -27,8 +53,11 @@ import {
   WRITER_REVENUE_PER_1K_READS,
   WRITER_SIGNING_THRESHOLD_WORDS,
   WRITER_STRATEGIES,
+  generateRandomDraft,
+  generateTrendFollowingDraft,
   generateWriterTitle,
 } from '../data/writer'
+import type { GameState } from '../types/game'
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n))
@@ -52,28 +81,728 @@ function randomPick<T>(arr: T[], rng: () => number = Math.random): T {
 export interface CreateWriterProjectInput {
   day: number
   platformId: import('../types/platform').NovelPlatformId
-  title?: string
-  /** 初始三维质量（0-100），不填则随机中等水平 */
-  quality?: number
-  commerciality?: number
-  memeValue?: number
+  /** 新书立项方案（含题材/标签/噱头）；不填则随机生成 */
+  draft?: import('../types/career').BookCreationDraft
   rng?: () => number
+  /** 玩家当前状态，用于计算掌控力 */
+  state?: GameState
+  /** 玩家作者档案，用于履历加成与技能快照 */
+  authorProfile?: AuthorProfile
+}
+
+/** 创建空的作家生涯档案 */
+export function createEmptyWriterCareerProfile(): WriterCareerProfile {
+  const genres: MainGenre[] = ['XUANHUAN', 'URBAN', 'SCI_FI', 'SUSPENSE', 'GAME', 'HISTORY']
+  const genreMastery = {} as Record<MainGenre, GenreMastery>
+  for (const genre of genres) {
+    genreMastery[genre] = {
+      genre,
+      completedCount: 0,
+      totalWordCount: 0,
+      proficiency: 0,
+    }
+  }
+  return {
+    genreMastery,
+    unlockedStyleTraits: [],
+    totalCompletedBooks: 0,
+    totalAbandonedBooks: 0,
+  }
+}
+
+/* ============================================================
+ * 多维作者技能进化 & 履历背景矩阵
+ * ============================================================ */
+
+/** 创建默认五维技能（全 20，无专精） */
+export function createDefaultAuthorSkills(): AuthorSkills {
+  return {
+    prose: 20,
+    pacing: 20,
+    structure: 20,
+    marketInsight: 20,
+    domainKnowledge: {},
+  }
+}
+
+/** 根据履历标签 id 列表创建作者档案 */
+export function createAuthorProfile(
+  penName: string,
+  backgroundIds: string[] = [],
+): AuthorProfile {
+  const skills = createDefaultAuthorSkills()
+  const backgrounds = backgroundIds
+    .map((id) => BACKGROUND_TAG_BY_ID[id])
+    .filter((t): t is BackgroundTag => !!t)
+
+  // 应用履历对基础能力的修正
+  for (const tag of backgrounds) {
+    if (tag.skillModifiers.prose !== undefined) {
+      skills.prose = clamp(skills.prose + tag.skillModifiers.prose, 0, 100)
+    }
+    if (tag.skillModifiers.pacing !== undefined) {
+      skills.pacing = clamp(skills.pacing + tag.skillModifiers.pacing, 0, 100)
+    }
+    if (tag.skillModifiers.structure !== undefined) {
+      skills.structure = clamp(skills.structure + tag.skillModifiers.structure, 0, 100)
+    }
+    if (tag.skillModifiers.marketInsight !== undefined) {
+      skills.marketInsight = clamp(
+        skills.marketInsight + tag.skillModifiers.marketInsight,
+        0,
+        100,
+      )
+    }
+    if (tag.skillModifiers.domainKnowledge) {
+      for (const [domain, delta] of Object.entries(tag.skillModifiers.domainKnowledge)) {
+        skills.domainKnowledge[domain] = clamp(
+          (skills.domainKnowledge[domain] ?? 0) + delta,
+          0,
+          100,
+        )
+      }
+    }
+  }
+
+  return {
+    penName,
+    skills,
+    backgrounds,
+    evolutionStage: computeAuthorEvolutionStage(skills, 0),
+  }
+}
+
+/** 根据五维与完本数判定进化阶段 */
+export function computeAuthorEvolutionStage(
+  skills: AuthorSkills,
+  completedBooks: number,
+): import('../types/career').AuthorEvolutionStage {
+  const avg = (skills.prose + skills.pacing + skills.structure + skills.marketInsight) / 4
+  if (avg >= 80 && completedBooks >= 3) return 'LEGEND'
+  if (avg >= 65 || completedBooks >= 2) return 'MASTER'
+  if (avg >= 45 || completedBooks >= 1) return 'RISING_STAR'
+  return 'NEWBIE'
+}
+
+/** 计算某作者档案面对特定题材时触发的所有化学反应 */
+export function computeBackgroundBonuses(
+  profile: AuthorProfile,
+  genre: MainGenre,
+): BackgroundBonus[] {
+  const bonuses: BackgroundBonus[] = []
+  for (const tag of profile.backgrounds) {
+    const synergies = findGenreSynergies(tag, genre)
+    for (const s of synergies) {
+      // 检查专精领域门槛
+      if (s.requiredDomain) {
+        const val = profile.skills.domainKnowledge[s.requiredDomain.domain] ?? 0
+        if (val < s.requiredDomain.min) continue
+      }
+      const comment = randomPick(s.uniqueReaderComments)
+      bonuses.push({
+        backgroundId: tag.id,
+        backgroundName: tag.name,
+        synergyName: s.synergyName,
+        qualityBonus: s.qualityBonus,
+        commercialityBonus: s.commercialityBonus ?? 0,
+        retentionBonus: s.retentionBonus ?? 0,
+        comment,
+      })
+    }
+  }
+  return bonuses
+}
+
+/** 将履历化学反应应用到作品初始三维 */
+function applyBackgroundBonusesToInitialStats(
+  stats: { quality: number; commerciality: number; memeValue: number },
+  bonuses: BackgroundBonus[],
+): { quality: number; commerciality: number; memeValue: number } {
+  let { quality, commerciality, memeValue } = stats
+  for (const b of bonuses) {
+    quality = clamp(quality * (1 + b.qualityBonus), 0, 100)
+    commerciality = clamp(commerciality * (1 + b.commercialityBonus), 0, 100)
+    // 商业化加成在一定程度上也会转化为爆点
+    memeValue = clamp(memeValue + commerciality * b.commercialityBonus * 0.3, 0, 100)
+  }
+  return { quality, commerciality, memeValue }
+}
+
+/** 将全局履历效果应用到项目初始状态 */
+function applyGlobalBackgroundEffects(
+  project: WriterProject,
+  backgrounds: BackgroundTag[],
+): WriterProject {
+  let next = { ...project }
+  for (const tag of backgrounds) {
+    const effects = tag.globalEffects
+    if (!effects) continue
+    if (effects.startingFans) {
+      next.stats = {
+        ...next.stats,
+        totalFansGained: next.stats.totalFansGained + effects.startingFans,
+      }
+    }
+    if (effects.retentionModifier) {
+      next.readerRetention = clamp(next.readerRetention + effects.retentionModifier, 0, 1)
+    }
+    if (effects.readerMoodModifier) {
+      next.readerMood = clamp(next.readerMood + effects.readerMoodModifier, -100, 100)
+    }
+    if (effects.initialControversy) {
+      next.stats = {
+        ...next.stats,
+        bugOrControversy: clamp(
+          next.stats.bugOrControversy + effects.initialControversy,
+          0,
+          100,
+        ),
+      }
+    }
+  }
+  return next
+}
+
+/** 根据写作策略增长作者技能 */
+export function growAuthorSkills(
+  action: WriterAction,
+  skills: AuthorSkills,
+): AuthorSkills {
+  const next: AuthorSkills = {
+    ...skills,
+    domainKnowledge: { ...skills.domainKnowledge },
+  }
+
+  switch (action.strategy) {
+    case 'SETUP':
+      next.structure = clamp(next.structure + 0.4, 0, 100)
+      next.prose = clamp(next.prose + 0.2, 0, 100)
+      break
+    case 'CLIMAX':
+      next.pacing = clamp(next.pacing + 0.6, 0, 100)
+      next.marketInsight = clamp(next.marketInsight + 0.1, 0, 100)
+      break
+    case 'FILLER':
+      next.pacing = clamp(next.pacing + 0.1, 0, 100)
+      break
+    case 'CLIFFHANGER':
+      next.pacing = clamp(next.pacing + 0.4, 0, 100)
+      next.structure = clamp(next.structure + 0.1, 0, 100)
+      break
+    case 'TROPE_INSERT':
+      next.marketInsight = clamp(next.marketInsight + 0.5, 0, 100)
+      next.prose = clamp(next.prose + 0.1, 0, 100)
+      break
+  }
+
+  // 长期连载会自动磨练结构力
+  if (action.wordCountAdd >= 4000) {
+    next.structure = clamp(next.structure + 0.05, 0, 100)
+  }
+
+  return next
+}
+
+/** 更新作者进化阶段并返回日志文本 */
+export function checkAuthorEvolution(
+  profile: AuthorProfile,
+  completedBooks: number,
+): { profile: AuthorProfile; log?: string } {
+  const nextStage = computeAuthorEvolutionStage(profile.skills, completedBooks)
+  if (nextStage === profile.evolutionStage) {
+    return { profile }
+  }
+
+  const stageNames: Record<import('../types/career').AuthorEvolutionStage, string> = {
+    NEWBIE: '萌新期',
+    RISING_STAR: '上升期',
+    MASTER: '成熟期',
+    LEGEND: '传奇期',
+  }
+
+  const messages: Record<import('../types/career').AuthorEvolutionStage, string> = {
+    NEWBIE: '',
+    RISING_STAR: '你逐渐找到了自己的写作节奏，不再是完全懵懂的新人了。',
+    MASTER: '你已经成为能驾驭长篇与世界观的成熟作者，读者开始称你为“老作者”。',
+    LEGEND: '你的文笔与结构已臻化境，评论区开始出现“大神求带”的呼声。',
+  }
+
+  return {
+    profile: { ...profile, evolutionStage: nextStage },
+    log: `写作境界突破：进入【${stageNames[nextStage]}】！${messages[nextStage]}`,
+  }
+}
+
+/** 计算作品复杂度 */
+export function computeNovelComplexity(draft: BookCreationDraft): NovelComplexity {
+  const genre = GENRE_BY_ID[draft.genre]
+  const tags = draft.tags.map((id) => BOOK_TAG_BY_ID[id]).filter(Boolean)
+  const gimmick = GIMMICK_BY_ID[draft.gimmick]
+
+  const genreComplexity = genre.complexityBase
+  const gimmickComplexity = gimmick?.complexityAdd ?? 15
+
+  // 标签复杂度：取平均值，但数量越多惩罚越高
+  const tagComplexityBase =
+    tags.reduce((s, t) => s + (t.complexityAdd ?? 10), 0) / Math.max(1, tags.length)
+  const tagCountPenalty = Math.max(0, tags.length - 2) * 8
+
+  // 标签间不兼容惩罚
+  let synergyPenalty = 0
+  for (let i = 0; i < tags.length; i++) {
+    for (let j = i + 1; j < tags.length; j++) {
+      const penalties = tags[i].synergyPenalty ?? []
+      const match = penalties.find((p) => p.tagId === tags[j].id)
+      if (match) synergyPenalty += match.penalty
+    }
+  }
+
+  const overlapPenalty = tagCountPenalty + synergyPenalty
+  const rawScore = genreComplexity + gimmickComplexity + tagComplexityBase + overlapPenalty
+
+  let tier: ComplexityTier = 'SIMPLE'
+  if (rawScore >= 80) tier = 'EPIC'
+  else if (rawScore >= 60) tier = 'COMPLEX'
+  else if (rawScore >= 40) tier = 'MODERATE'
+
+  return {
+    score: clamp(rawScore, 0, 100),
+    tier,
+    breakdown: {
+      genre: genreComplexity,
+      tags: tagComplexityBase + tagCountPenalty,
+      gimmick: gimmickComplexity,
+      overlapPenalty: synergyPenalty,
+    },
+  }
+}
+
+/** 计算作者掌控力 */
+export function computeExecutionCapacity(
+  draft: BookCreationDraft,
+  state: GameState,
+): number {
+  const profile = state.writerCareerProfile
+  const mastery = profile.genreMastery[draft.genre]
+
+  // 基础掌控力：由玩家状态决定
+  let base = 35
+
+  // 题材熟练度：每本完本 +10，每写 10 万字 +2
+  const masteryBonus = Math.min(
+    30,
+    mastery.completedCount * 10 + Math.floor(mastery.totalWordCount / 100_000) * 2,
+  )
+
+  // 作者等级加成
+  const rankBonus: Record<AuthorRank, number> = {
+    COLT: 0,
+    SIGNED: 5,
+    BOUTIQUE: 12,
+    GREAT_GOD: 20,
+    PLATINUM: 28,
+  }
+
+  // 心态加成：心态稳定时掌控力上升
+  const moodBonus = clamp((150 - state.stats.stress) / 10, -15, 15)
+
+  // 健康惩罚：虚弱时掉掌控力
+  const health = state.stats.health
+  const healthPenalty = health < 20 ? -30 : health < 50 ? -15 : 0
+
+  // 太监惩罚：每太监一本书，下一本开局 -3（上限 -15）
+  const abandonPenalty = -Math.min(15, profile.totalAbandonedBooks * 3)
+
+  return clamp(
+    base + masteryBonus + rankBonus[state.authorRank] + moodBonus + healthPenalty + abandonPenalty,
+    10,
+    100,
+  )
+}
+
+/** 掌控力校验 */
+export function checkExecutionCapacity(
+  complexity: NovelComplexity,
+  execution: number,
+): ExecutionCheckResult {
+  const ratio = execution / Math.max(1, complexity.score)
+
+  if (ratio >= 1.1) {
+    return {
+      ratio,
+      tier: 'PERFECT',
+      qualityMultiplier: 1.15,
+      retentionDelta: 0.03,
+      readerComment: '设定严密，作者脑洞真大！',
+    }
+  }
+  if (ratio >= 0.85) {
+    return {
+      ratio,
+      tier: 'SOLID',
+      qualityMultiplier: 1.0,
+      retentionDelta: 0,
+    }
+  }
+  if (ratio >= 0.65) {
+    return {
+      ratio,
+      tier: 'SHAKY',
+      qualityMultiplier: 0.85,
+      retentionDelta: -0.04,
+      readerComment: '作者想法很好，但节奏有点驾驭不住。',
+    }
+  }
+  return {
+    ratio,
+    tier: 'LOST',
+    qualityMultiplier: 0.65,
+    retentionDelta: -0.10,
+    readerComment: '毒点暴增，作者完全驾驭不住这个题材。',
+  }
+}
+
+/** 判定作品生长曲线 */
+export function determineGrowthCurve(
+  draft: BookCreationDraft,
+  complexity: NovelComplexity,
+  traits: string[] = [],
+): GrowthCurveType {
+  const genre = GENRE_BY_ID[draft.genre]
+  const tags = draft.tags.map((id) => BOOK_TAG_BY_ID[id]).filter(Boolean)
+  const gimmick = GIMMICK_BY_ID[draft.gimmick]
+
+  // 计算各曲线倾向分
+  let slowBurn = complexity.score * 0.6 + genre.qualityWeight * 15
+  let fastFood = genre.baseCommerciality * 0.5 + (gimmick?.memePotential ?? 50) * 0.5
+  let nicheCult =
+    tags.reduce((s, t) => s + t.riskFactor, 0) / Math.max(1, tags.length)
+  let steady = 30
+
+  // 特质修正
+  if (traits.includes('cozy_daily')) nicheCult += 40
+  if (traits.includes('lore_master')) slowBurn += 35
+  if (traits.includes('meme_machine')) fastFood += 40
+  if (traits.includes('cliffhanger_god')) fastFood += 20
+
+  const scores = [
+    { type: 'SLOW_BURN' as GrowthCurveType, score: slowBurn },
+    { type: 'FAST_FOOD' as GrowthCurveType, score: fastFood },
+    { type: 'NICHE_CULT' as GrowthCurveType, score: nicheCult },
+    { type: 'STEADY' as GrowthCurveType, score: steady },
+  ]
+
+  return scores.sort((a, b) => b.score - a.score)[0].type
+}
+
+/** 更新口碑池 */
+export function updateWordOfMouth(
+  project: WriterProject,
+  action: WriterAction,
+  executionCheck: ExecutionCheckResult,
+): WordOfMouthPool {
+  const curve = GROWTH_CURVE_BY_ID[project.growthCurve]
+  const traits = project.activeStyleTraits.map((id) => NOVEL_STYLE_TRAIT_BY_ID[id])
+
+  let delta = 0
+
+  // 铺垫章节蓄水（质量门槛较低，让掌控力略有不足的作者也能缓慢积累）
+  if (action.strategy === 'SETUP') {
+    delta += 1
+    if (project.quality >= 30) {
+      delta += 2 * curve.wordOfMouthEfficiency
+    }
+  }
+
+  // 高潮章节大量蓄水
+  if (action.strategy === 'CLIMAX') {
+    delta += 2
+    if (project.quality >= 35) {
+      delta += 4 * curve.wordOfMouthEfficiency
+    }
+  }
+
+  // 掌控力加成：完美+2，稳健+1
+  if (executionCheck.tier === 'PERFECT') delta += 2
+  else if (executionCheck.tier === 'SOLID') delta += 1
+
+  // 特质加成
+  for (const trait of traits) {
+    if (trait.buff.wordOfMouthBoost) {
+      delta *= trait.buff.wordOfMouthBoost
+    }
+  }
+
+  // 读者情绪高时，自来水增加
+  if (project.readerMood > 20) delta += 1.5
+
+  // 水字数和太监风险掉口碑
+  if (action.strategy === 'FILLER') delta -= 2
+
+  const next = clamp(project.wordOfMouth.current + delta, 0, 100)
+  const primed = next >= curve.breakthroughThreshold
+
+  return {
+    ...project.wordOfMouth,
+    current: next,
+    primed,
+    activeEvangelists: Math.floor(next / 10),
+  }
+}
+
+/** 检测慢热逆袭事件 */
+export function checkSlowBurnBreakthrough(
+  project: WriterProject,
+  rng: () => number = Math.random,
+): { triggered: boolean; hypeBoost: number; logs: string[] } {
+  if (project.growthCurve !== 'SLOW_BURN') return { triggered: false, hypeBoost: 0, logs: [] }
+  if (!project.wordOfMouth.primed) return { triggered: false, hypeBoost: 0, logs: [] }
+
+  const trait = NOVEL_STYLE_TRAIT_BY_ID['lore_master']
+  const thresholdQuality = trait && project.activeStyleTraits.includes('lore_master')
+    ? 55
+    : 65
+  if (project.quality < thresholdQuality) return { triggered: false, hypeBoost: 0, logs: [] }
+
+  // 触发概率：口碑池越满越高
+  const chance = 0.05 + project.wordOfMouth.current / 500
+  if (rng() > chance) return { triggered: false, hypeBoost: 0, logs: [] }
+
+  const hypeBoost = randomRange([25, 55], rng)
+  const logs = [
+    `《${project.title}》的伏笔终于收回！评论区开始刷屏：“前 50 章忍住，后面直接封神！”`,
+    `有 UP 主做了《${project.title}》的安利视频，自来水开始破圈。`,
+  ]
+
+  return { triggered: true, hypeBoost, logs }
+}
+
+/** 检测一夜爆火事件 */
+export function checkOvernightViral(
+  project: WriterProject,
+  action: WriterAction,
+  rng: () => number = Math.random,
+): { triggered: boolean; hypeBoost: number; logs: string[]; durationDays: number } {
+  let baseChance = 0.0
+
+  // 高 memeValue + 整活策略 = 爆火概率
+  if (project.memeValue >= 60 && action.strategy === 'TROPE_INSERT') baseChance += 0.04
+  if (project.memeValue >= 70 && action.strategy === 'CLIMAX') baseChance += 0.03
+
+  // 偏科死忠书也有小概率出梗
+  if (project.growthCurve === 'NICHE_CULT' && project.memeValue >= 55) baseChance += 0.02
+
+  // 特质修正
+  if (project.activeStyleTraits.includes('meme_machine')) baseChance += 0.03
+
+  if (rng() > baseChance) return { triggered: false, hypeBoost: 0, logs: [], durationDays: 0 }
+
+  const hypeBoost = randomRange([30, 70], rng)
+  const durationDays = Math.floor(randomRange([3, 8], rng))
+  const logs = [
+    `《${project.title}》的某段剧情被做成梗图，在社交媒体上病毒式传播！`,
+    `大量路人涌进评论区：“慕名而来，这就是那本神书？”`,
+  ]
+
+  return { triggered: true, hypeBoost, logs, durationDays }
+}
+
+/** 应用生长曲线到曝光量 */
+export function applyGrowthCurve(
+  project: WriterProject,
+  baseExposure: number,
+  bookAgeDays: number,
+): number {
+  const curve = GROWTH_CURVE_BY_ID[project.growthCurve]
+
+  // 根据书龄判断处于前期还是后期
+  const isLateStage = bookAgeDays > 20 || project.wordCount > 200_000
+  const stageMultiplier = isLateStage ? curve.lateHypeMultiplier : curve.earlyHypeMultiplier
+
+  // 爆火状态加成
+  const viralMultiplier = project.isViralSurge ? 1.8 : 1.0
+
+  return baseExposure * stageMultiplier * viralMultiplier
+}
+
+/** 应用文风特质效果到留存与转化 */
+export function applyStyleTraitEffects(
+  project: WriterProject,
+  baseRetention: number,
+  baseFanConversion: number,
+): { retention: number; fanConversion: number } {
+  const traits = project.activeStyleTraits.map((id) => NOVEL_STYLE_TRAIT_BY_ID[id])
+
+  let retention = baseRetention
+  let fanConversion = baseFanConversion
+
+  for (const trait of traits) {
+    if (trait.debuff.earlyRetentionPenalty) {
+      retention += trait.debuff.earlyRetentionPenalty
+    }
+    if (trait.buff.fanConversionBoost) {
+      fanConversion *= trait.buff.fanConversionBoost
+    }
+  }
+
+  // 字数越过前期后，日常流的留存惩罚逐渐消失
+  if (project.activeStyleTraits.includes('cozy_daily') && project.wordCount > 100_000) {
+    retention += 0.15
+  }
+
+  return {
+    retention: clamp(retention, 0.01, 0.95),
+    fanConversion: clamp(fanConversion, 0.001, 0.5),
+  }
+}
+
+/** 尝试涌现式觉醒文风特质 */
+export function tryAwakenStyleTrait(
+  project: WriterProject,
+  profile: WriterCareerProfile,
+  rng: () => number = Math.random,
+): NovelStyleTrait | null {
+  const candidates = NOVEL_STYLE_TRAITS.filter((trait) => {
+    if (project.activeStyleTraits.includes(trait.id)) return false
+    if (profile.unlockedStyleTraits.includes(trait.id)) return false
+    const cond = trait.unlockCondition
+    if (!cond) return false
+    if (cond.minWordCount && project.wordCount < cond.minWordCount) return false
+    if (cond.minQuality && project.quality < cond.minQuality) return false
+    return true
+  })
+
+  if (candidates.length === 0) return null
+  if (rng() > 0.15) return null
+
+  return randomPick(candidates, rng)
+}
+
+/** 完结/太监时更新生涯档案 */
+export function updateWriterCareerProfile(
+  profile: WriterCareerProfile,
+  project: WriterProject,
+  completed: boolean,
+): WriterCareerProfile {
+  const mastery = profile.genreMastery[project.genre]
+  const nextProfile: WriterCareerProfile = {
+    genreMastery: { ...profile.genreMastery },
+    unlockedStyleTraits: [...profile.unlockedStyleTraits],
+    totalCompletedBooks: profile.totalCompletedBooks,
+    totalAbandonedBooks: profile.totalAbandonedBooks,
+  }
+
+  nextProfile.genreMastery[project.genre] = {
+    ...mastery,
+    totalWordCount: mastery.totalWordCount + project.wordCount,
+    completedCount: completed ? mastery.completedCount + 1 : mastery.completedCount,
+    proficiency: clamp(
+      mastery.proficiency + (completed ? 10 : 2) + Math.floor(project.wordCount / 100_000),
+      0,
+      100,
+    ),
+  }
+
+  if (completed) nextProfile.totalCompletedBooks += 1
+  else nextProfile.totalAbandonedBooks += 1
+
+  // 解锁本书激活过的特质
+  for (const traitId of project.activeStyleTraits) {
+    if (!nextProfile.unlockedStyleTraits.includes(traitId)) {
+      nextProfile.unlockedStyleTraits.push(traitId)
+    }
+  }
+
+  return nextProfile
+}
+
+/** 根据题材+标签+噱头计算初始三维 */
+function computeInitialStats(
+  draft: BookCreationDraft,
+  rng: () => number,
+): { quality: number; commerciality: number; memeValue: number; isBlackHorseTarget: boolean } {
+  const genre = GENRE_BY_ID[draft.genre]
+  const tags = draft.tags.map((id) => BOOK_TAG_BY_ID[id]).filter(Boolean)
+  const gimmick = GIMMICK_BY_ID[draft.gimmick]
+
+  const avgTagCommercialityMod =
+    tags.reduce((s, t) => s + t.commercialityModifier, 0) / Math.max(1, tags.length)
+  const avgTagMeme =
+    tags.reduce((s, t) => s + t.memePotential, 0) / Math.max(1, tags.length)
+  const avgTagRisk =
+    tags.reduce((s, t) => s + t.riskFactor, 0) / Math.max(1, tags.length)
+  const risk = (avgTagRisk + (gimmick?.riskFactor ?? 30)) / 2
+
+  const quality = clamp(
+    42 +
+      (genre.qualityWeight - 1) * 25 +
+      ((gimmick?.qualityModifier ?? 1) - 1) * 20 +
+      rng() * 12,
+    0,
+    100,
+  )
+  const commerciality = clamp(
+    genre.baseCommerciality *
+      (avgTagCommercialityMod || 1) *
+      (gimmick?.commercialityModifier ?? 1) *
+      (1 - risk / 250) +
+      rng() * 10,
+    0,
+    100,
+  )
+  const memeValue = clamp(
+    genre.baseMemePotential * 0.55 +
+      avgTagMeme * 0.55 +
+      (gimmick?.memePotential ?? 50) * 0.5 +
+      rng() * 10,
+    0,
+    100,
+  )
+
+  // 小众高风险 + 高爆点 = 黑马潜能
+  const isBlackHorseTarget = risk >= 50 && memeValue >= 60
+
+  return { quality, commerciality, memeValue, isBlackHorseTarget }
 }
 
 export function createWriterProject(
   input: CreateWriterProjectInput,
 ): WriterProject {
   const rng = input.rng ?? Math.random
-  const title = input.title ?? generateWriterTitle(rng)
-  const quality = clamp(input.quality ?? 50 + rng() * 10, 0, 100)
-  const commerciality = clamp(input.commerciality ?? 50 + rng() * 10, 0, 100)
-  const memeValue = clamp(input.memeValue ?? 50 + rng() * 10, 0, 100)
+  const draft = input.draft ?? generateRandomDraft(rng)
+  const title = generateWriterTitle(draft, rng)
+  let { quality, commerciality, memeValue, isBlackHorseTarget } = computeInitialStats(
+    draft,
+    rng,
+  )
 
-  return {
+  // 计算并应用履历化学反应
+  const authorProfile = input.authorProfile ?? createAuthorProfile(draft.penName)
+  const backgroundBonuses = computeBackgroundBonuses(authorProfile, draft.genre)
+  const boosted = applyBackgroundBonusesToInitialStats(
+    { quality, commerciality, memeValue },
+    backgroundBonuses,
+  )
+  quality = boosted.quality
+  commerciality = boosted.commerciality
+  memeValue = boosted.memeValue
+
+  const complexity = computeNovelComplexity(draft)
+  const executionCapacity = input.state
+    ? computeExecutionCapacity(draft, input.state)
+    : 35
+  const growthCurve = determineGrowthCurve(draft, complexity, draft.styleTraits)
+
+  let project: WriterProject = {
     id: `writer_${Date.now()}_${Math.floor(rng() * 1000)}`,
     professionType: 'WRITER',
     platformId: input.platformId,
     title,
+    penName: draft.penName || '咸鱼作者',
+    genre: draft.genre,
+    tags: draft.tags,
+    gimmick: draft.gimmick,
+    blackHorseTriggered: isBlackHorseTarget,
     phase: 'CONCEPT',
     stage: 'CONCEPT',
     dayCreated: input.day,
@@ -104,7 +833,28 @@ export function createWriterProject(
     totalChapters: 0,
     readerMood: 0,
     dailyWordCount: 0,
+    complexity,
+    executionCapacity,
+    growthCurve,
+    activeStyleTraits: draft.styleTraits ?? [],
+    wordOfMouth: {
+      current: 0,
+      primed: false,
+      breakthroughCount: 0,
+      activeEvangelists: 0,
+    },
+    foreshadowingCharge: 0,
+    chaptersToClimax: 5,
+    isViralSurge: false,
+    viralSurgeDays: 0,
+    authorSkillSnapshot: authorProfile.skills,
+    backgroundBonuses,
   }
+
+  // 应用全局履历效果（初始粉丝、追读修正、隐患等）
+  project = applyGlobalBackgroundEffects(project, authorProfile.backgrounds)
+
+  return project
 }
 
 /** 根据字数重新计算网文项目的 progress 与阶段 */
@@ -337,6 +1087,7 @@ export function applyWriterAction(
   currentDay: number,
   platform: NovelPlatform = PLATFORMS[project.platformId],
   rng: () => number = Math.random,
+  state?: GameState,
 ): CareerActionResult {
   // 阶段检查
   const required = Array.isArray(action.phaseRequired)
@@ -367,7 +1118,15 @@ export function applyWriterAction(
   )
   next.memeValue = clamp(next.memeValue + (action.effects.memeValueAdd ?? 0), 0, 100)
 
-  // 3. 热度助推
+  // 3. 掌控力校验（题材/Tag/噱头越复杂，越考验作者硬实力）
+  const executionCheck = checkExecutionCapacity(next.complexity, next.executionCapacity)
+  next.quality = clamp(next.quality * executionCheck.qualityMultiplier, 0, 100)
+  next.readerRetention = clamp(next.readerRetention + executionCheck.retentionDelta, 0, 1)
+  if (executionCheck.readerComment && rng() < 0.5) {
+    logs.push(`本章说：${executionCheck.readerComment}`)
+  }
+
+  // 4. 热度助推
   if (action.effects.hypeBoost) {
     next.metrics = {
       ...next.metrics,
@@ -379,7 +1138,39 @@ export function applyWriterAction(
     }
   }
 
-  // 4. 追读率与读者情绪
+  // 5. 口碑池更新（为慢热逆袭蓄水）
+  next.wordOfMouth = updateWordOfMouth(next, action, executionCheck)
+
+  // 6. 慢热逆袭检测
+  const breakthrough = checkSlowBurnBreakthrough(next, rng)
+  if (breakthrough.triggered) {
+    next.metrics = {
+      ...next.metrics,
+      currentHype: clamp(next.metrics.currentHype + breakthrough.hypeBoost, 0, 100),
+    }
+    next.wordOfMouth = {
+      ...next.wordOfMouth,
+      current: 0,
+      primed: false,
+      breakthroughCount: next.wordOfMouth.breakthroughCount + 1,
+      lastBreakthroughChapter: next.totalChapters,
+    }
+    logs.push(...breakthrough.logs)
+  }
+
+  // 7. 一夜爆火检测
+  const viral = checkOvernightViral(next, action, rng)
+  if (viral.triggered) {
+    next.isViralSurge = true
+    next.viralSurgeDays = viral.durationDays
+    next.metrics = {
+      ...next.metrics,
+      currentHype: clamp(next.metrics.currentHype + viral.hypeBoost, 0, 100),
+    }
+    logs.push(...viral.logs)
+  }
+
+  // 8. 追读率与读者情绪
   next.readerRetention = clamp(
     next.readerRetention + action.retentionDelta,
     0,
@@ -387,7 +1178,7 @@ export function applyWriterAction(
   )
   next.readerMood = clamp(next.readerMood + action.readerMoodDelta, -100, 100)
 
-  // 5. 日更连续性
+  // 9. 日更连续性
   if (action.countsAsDailyUpdate) {
     if (currentDay - next.lastUpdatedDay <= 1) {
       next.consecutiveDailyUpdates += 1
@@ -397,7 +1188,7 @@ export function applyWriterAction(
     next.lastUpdatedDay = currentDay
   }
 
-  // 6. 阶段流转（签约 / 上架）
+  // 10. 阶段流转（签约 / 上架）
   const signResult = trySign(next, platform, currentDay, rng)
   if (signResult.log) logs.push(signResult.log)
   next = signResult.project
@@ -408,16 +1199,42 @@ export function applyWriterAction(
 
   next = trySerializing(next)
 
-  // 7. 重新计算进度
+  // 11. 重新计算进度
   next = recalcWriterProgress(next)
 
-  // 8. 读者本章说（平台 + 策略 + 梗 + 状态驱动）
+  // 12. 文风特质涌现式觉醒
+  if (state) {
+    const newTrait = tryAwakenStyleTrait(next, state.writerCareerProfile, rng)
+    if (newTrait) {
+      next.activeStyleTraits = [...next.activeStyleTraits, newTrait.id]
+      logs.push(
+        `《${next.title}》逐渐形成了独特的【${newTrait.name}】文风：${newTrait.description}`,
+      )
+    }
+  }
+
+  // 13. 读者本章说（平台 + 策略 + 梗 + 状态驱动）
   if (action.strategy !== 'META') {
     const comment = generateReaderComment(next, platform, action.strategy, rng)
     logs.push(`本章说：${comment}`)
   }
 
-  // 9. 玩家属性消耗
+  // 14. 作者五维技能成长（履历决定文风，写作淬炼进化）
+  let authorProfile: AuthorProfile | undefined
+  if (action.strategy !== 'META' && state?.authorProfile) {
+    const grownSkills = growAuthorSkills(action, state.authorProfile.skills)
+    const completedBooks = state.writerCareerProfile?.totalCompletedBooks ?? 0
+    const evolved = checkAuthorEvolution(
+      { ...state.authorProfile, skills: grownSkills },
+      completedBooks,
+    )
+    authorProfile = evolved.profile
+    if (evolved.log) {
+      logs.push(evolved.log)
+    }
+  }
+
+  // 15. 玩家属性消耗
   const playerDelta: CareerActionResult['playerDelta'] = {
     energy: action.cost.energy,
     stress: action.cost.stress,
@@ -426,7 +1243,7 @@ export function applyWriterAction(
     playerDelta.savings = -action.cost.money
   }
 
-  return { project: next, playerDelta, logs }
+  return { project: next, playerDelta, logs, authorProfile }
 }
 
 /** 网文项目每日发酵结算 */
@@ -434,6 +1251,7 @@ export function dailyTickWriter(
   project: WriterProject,
   currentDay: number,
   platform: NovelPlatform = PLATFORMS[project.platformId],
+  trend?: import('../types/career').MarketTrend,
   rng: () => number = Math.random,
 ): CareerDailyResult {
   // 完结/太监项目不再主动发酵，只保留余热或惩罚
@@ -476,17 +1294,37 @@ export function dailyTickWriter(
   const marketRng = randomRange(WRITER_MARKET_RNG_RANGE, rng)
 
   // 2. 平台算法匹配度：越契合平台算法，曝光和收益越高
-  const algorithmMatchScore = computeAlgorithmMatchScore(next, platform)
+  const algorithmMatchScore = computeAlgorithmMatchScore(next, platform, trend)
   const matchMultiplier = 0.5 + algorithmMatchScore / 100
+
+  // 2.5 黑马爆款触发：高风险脑洞+质量/爆点达标时，某日突然出圈
+  if (
+    next.blackHorseTriggered &&
+    (next.quality + next.memeValue) / 2 >= 65 &&
+    rng() < 0.12
+  ) {
+    const blackHorseHype = randomRange([20, 40], rng)
+    next.metrics = {
+      ...next.metrics,
+      currentHype: clamp(next.metrics.currentHype + blackHorseHype, 0, 100),
+    }
+    logs.push(
+      `《${next.title}》的邪门组合意外被读者玩成梗，热度暴涨 ${Math.round(blackHorseHype)}！`,
+    )
+  }
 
   // 3. 每日曝光/阅读量
   const baseHype = WRITER_BASE_HYPE + next.metrics.currentHype
   const score =
     next.commerciality * 0.4 + next.memeValue * 0.4 + next.quality * 0.2
-  const exposure = Math.max(
+  const rawExposure = Math.max(
     0,
     baseHype * (score / 100) * marketRng * matchMultiplier,
   )
+
+  // 应用生长曲线（前期/后期系数、爆火状态）
+  const bookAgeDays = currentDay - next.dayCreated
+  const exposure = applyGrowthCurve(next, rawExposure, bookAgeDays)
   next.metrics = {
     ...next.metrics,
     viewsOrReaders: next.metrics.viewsOrReaders + exposure,
@@ -540,7 +1378,19 @@ export function dailyTickWriter(
     logs.push(`《${next.title}》上架首日首订结算！`)
   }
 
-  // 5. 粉丝转化
+  // 5. 文风特质影响留存与转化
+  const traitEffects = applyStyleTraitEffects(
+    next,
+    next.readerRetention,
+    next.metrics.fanConversionRate,
+  )
+  next.readerRetention = traitEffects.retention
+  next.metrics = {
+    ...next.metrics,
+    fanConversionRate: traitEffects.fanConversion,
+  }
+
+  // 6. 粉丝转化
   const newFans = exposure * next.metrics.fanConversionRate
   next.stats = {
     ...next.stats,
@@ -548,28 +1398,61 @@ export function dailyTickWriter(
     totalFansGained: next.stats.totalFansGained + newFans,
   }
 
-  // 6. 热度衰减：质量高衰减慢，爆点高衰减快
-  const decayRate =
+  // 7. 热度衰减：质量高衰减慢，爆点高衰减快
+  const traits = next.activeStyleTraits.map((id) => NOVEL_STYLE_TRAIT_BY_ID[id])
+  let decayRate =
     WRITER_DEFAULT_HYPE_DECAY *
     (1 + next.memeValue / 100) *
     (1 - next.quality / 200)
+  for (const trait of traits) {
+    if (trait.debuff.hypeDecayBoost) {
+      decayRate *= trait.debuff.hypeDecayBoost
+    }
+  }
   next.metrics = {
     ...next.metrics,
     currentHype: clamp(next.metrics.currentHype * (1 - decayRate), 0, 100),
     hypeDecay: decayRate,
   }
 
-  // 7. 读者情绪自然回归
-  next.readerMood = clamp(next.readerMood * 0.9, -100, 100)
+  // 8. 读者情绪自然回归（受特质影响）
+  let moodRecovery = 0.9
+  for (const trait of traits) {
+    if (trait.buff.readerMoodRecovery) {
+      moodRecovery /= trait.buff.readerMoodRecovery
+    }
+  }
+  next.readerMood = clamp(next.readerMood * moodRecovery, -100, 100)
 
-  // 8. 追读率自然衰减（长期不更新会大幅下滑）
+  // 9. 口碑自然发酵（慢热书熬过前期后每日微量蓄水）
+  if (next.growthCurve === 'SLOW_BURN' && next.wordCount > 50_000) {
+    const curve = GROWTH_CURVE_BY_ID[next.growthCurve]
+    const wordOfMouthDelta = 0.5 * curve.wordOfMouthEfficiency
+    next.wordOfMouth = {
+      ...next.wordOfMouth,
+      current: clamp(next.wordOfMouth.current + wordOfMouthDelta, 0, 100),
+      activeEvangelists: Math.floor(clamp(next.wordOfMouth.current + wordOfMouthDelta, 0, 100) / 10),
+    }
+    next.wordOfMouth.primed = next.wordOfMouth.current >= curve.breakthroughThreshold
+  }
+
+  // 10. 爆火状态倒计时
+  if (next.isViralSurge) {
+    next.viralSurgeDays -= 1
+    if (next.viralSurgeDays <= 0) {
+      next.isViralSurge = false
+      logs.push(`《${next.title}》的爆火热度开始回落，读者开始用放大镜审视后续质量。`)
+    }
+  }
+
+  // 11. 追读率自然衰减（长期不更新会大幅下滑）
   if (currentDay - next.lastUpdatedDay > 1) {
     next.readerRetention = clamp(next.readerRetention - 0.05, 0, 1)
     next.consecutiveDailyUpdates = 0
     logs.push(`《${next.title}》断更一天，追读率下滑。`)
   }
 
-  // 9. 全勤奖
+  // 13. 全勤奖
   let fullAttendanceReward = 0
   if (
     next.stage !== 'CONCEPT' &&
@@ -581,7 +1464,7 @@ export function dailyTickWriter(
     )
   }
 
-  // 10. 重置今日字数
+  // 14. 重置今日字数
   next.dailyWordCount = 0
 
   const playerDelta: CareerDailyResult['playerDelta'] = {
@@ -589,7 +1472,7 @@ export function dailyTickWriter(
     fans: newFans,
   }
 
-  // 11. 隐患爆发（概率性， memeValue 高/quality 低时更容易）
+  // 15. 隐患爆发（概率性， memeValue 高/quality 低时更容易）
   const controversyRisk = (next.memeValue / 100) * 0.02 + ((100 - next.quality) / 100) * 0.01
   if (rng() < controversyRisk && next.stage !== 'CONCEPT') {
     next.stats.bugOrControversy = clamp(next.stats.bugOrControversy + 10, 0, 100)

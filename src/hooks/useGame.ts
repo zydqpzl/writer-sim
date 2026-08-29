@@ -58,18 +58,26 @@ import {
 import type { LegacyProfile, StartingIdentity } from '../data/legacy'
 import { WRITER_ACTION_BY_ID } from '../data/writer'
 import { INSPIRATION_BY_ID } from '../data/inspirations'
+import {
+  STARTING_IDENTITY_BACKGROUNDS,
+} from '../data/backgrounds'
 import { PLATFORMS } from '../data/platforms'
+import { generateMarketTrend, tickMarketTrend } from '../data/marketTrends'
 import { simulatePlatformDaily } from '../engine/platformEngine'
 import {
   abandonWriterProject,
   applyInspirationToWriterProject,
   applyMemeHomage,
   applyWriterAction,
+  checkAuthorEvolution,
   completeWriterProject,
   computeAuthorRank,
+  createAuthorProfile,
+  createEmptyWriterCareerProfile,
   createWriterProject,
   dailyTickWriter,
   generateMemeFromProject,
+  updateWriterCareerProfile,
 } from '../engine/careerEngine'
 
 const SLOT_LABEL: Record<TimeSlot, string> = {
@@ -261,7 +269,16 @@ export interface StartSetup {
 function computeStartState(setup?: StartSetup): GameState {
   const identity = setup?.identity ?? STARTING_IDENTITIES[0]
   const keptCards = resolveKeptCards(setup?.keptCardIds ?? [])
-  return buildInitialState(identity, keptCards)
+  const state = buildInitialState(identity, keptCards)
+  // 根据开局身份映射默认履历标签
+  const backgroundIds = STARTING_IDENTITY_BACKGROUNDS[identity.id] ?? []
+  return {
+    ...state,
+    authorProfile: createAuthorProfile(
+      state.authorProfile.penName,
+      backgroundIds,
+    ),
+  }
 }
 
 export function useGame(initialSetup?: StartSetup) {
@@ -702,10 +719,7 @@ export function useGame(initialSetup?: StartSetup) {
   const startWriterProject = useCallback(
     (input?: {
       platformId?: import('../types/platform').NovelPlatformId
-      title?: string
-      quality?: number
-      commerciality?: number
-      memeValue?: number
+      draft?: import('../types/career').BookCreationDraft
     }) => {
       if (state.actedThisSlot) return
       const platformId =
@@ -714,10 +728,19 @@ export function useGame(initialSetup?: StartSetup) {
       const project = createWriterProject({
         day: state.day,
         platformId,
-        ...input,
+        draft: input?.draft,
+        state,
+        authorProfile: state.authorProfile,
       })
+      // 如果新书使用了新笔名，同步更新作者档案
+      const penName = input?.draft?.penName ?? state.authorProfile.penName
+      const nextAuthorProfile =
+        penName !== state.authorProfile.penName
+          ? { ...state.authorProfile, penName }
+          : state.authorProfile
       setState({
         ...state,
+        authorProfile: nextAuthorProfile,
         careerProjects: [...state.careerProjects, project],
         actedThisSlot: true,
         workedToday: true,
@@ -727,7 +750,7 @@ export function useGame(initialSetup?: StartSetup) {
         state.day,
         state.slot,
         'system',
-        `新书立项：${project.title}（${PLATFORMS[platformId].name}），初始三维（质量 ${Math.round(project.quality)} / 商业 ${Math.round(project.commerciality)} / 爆点 ${Math.round(project.memeValue)}）。`,
+        `新书立项：${project.title}（${PLATFORMS[platformId].name}），复杂度 ${Math.round(project.complexity.score)} / 掌控力 ${Math.round(project.executionCapacity)} / 生长曲线 ${project.growthCurve}。`,
       )
     },
     [state, log],
@@ -760,7 +783,7 @@ export function useGame(initialSetup?: StartSetup) {
         return
       }
 
-      const result = applyWriterAction(project, action, state.day)
+      const result = applyWriterAction(project, action, state.day, undefined, undefined, state)
       const newStats = applyEffects(
         state.stats,
         {
@@ -784,6 +807,7 @@ export function useGame(initialSetup?: StartSetup) {
         ...state,
         stats: newStats,
         careerProjects: newProjects,
+        authorProfile: result.authorProfile ?? state.authorProfile,
         actedThisSlot: true,
         workedToday: true,
         consecutivePartTimeDays: 0,
@@ -824,12 +848,25 @@ export function useGame(initialSetup?: StartSetup) {
         ? state.unlockedMemes
         : [...state.unlockedMemes, meme]
       : state.unlockedMemes
+    const nextProfile = updateWriterCareerProfile(
+      state.writerCareerProfile,
+      next,
+      true,
+    )
+    // 完结后再次检查进化阶段（完本数是重要分水岭）
+    const evolved = checkAuthorEvolution(
+      state.authorProfile,
+      nextProfile.totalCompletedBooks,
+    )
+    if (evolved.log) log(state.day, state.slot, 'celebrate', evolved.log)
     setState({
       ...state,
       careerProjects: state.careerProjects.map((p) =>
         p.id === next.id ? next : p,
       ),
       unlockedMemes: newMemes,
+      writerCareerProfile: nextProfile,
+      authorProfile: evolved.profile,
     })
     log(state.day, state.slot, 'celebrate', logText)
     if (memeLog) log(state.day, state.slot, 'celebrate', memeLog)
@@ -849,6 +886,11 @@ export function useGame(initialSetup?: StartSetup) {
         ? state.unlockedMemes
         : [...state.unlockedMemes, meme]
       : state.unlockedMemes
+    const nextProfile = updateWriterCareerProfile(
+      state.writerCareerProfile,
+      next,
+      false,
+    )
     const maxS = computeMaxStress(state)
     const newStats = applyEffects(
       state.stats,
@@ -863,6 +905,7 @@ export function useGame(initialSetup?: StartSetup) {
         p.id === next.id ? next : p,
       ),
       unlockedMemes: newMemes,
+      writerCareerProfile: nextProfile,
     })
     log(state.day, state.slot, 'event', logText)
     if (memeLog) log(state.day, state.slot, 'event', memeLog)
@@ -1442,7 +1485,7 @@ export function useGame(initialSetup?: StartSetup) {
         const ticked: typeof state.careerProjects = []
         for (const project of state.careerProjects) {
           if (isWriterProject(project)) {
-            const result = dailyTickWriter(project, newDay)
+            const result = dailyTickWriter(project, newDay, undefined, state.marketTrend)
             ticked.push(result.project)
             careerSavingsDelta += result.playerDelta.savings ?? 0
             careerFansDelta += result.playerDelta.fans ?? 0
@@ -1455,6 +1498,21 @@ export function useGame(initialSetup?: StartSetup) {
           }
         }
         careerProjectsTicked = ticked
+      }
+
+      // 市场趋势每日推进：衰减 + 饱和度统计
+      let marketTrend = tickMarketTrend(
+        state.marketTrend,
+        careerProjectsTicked.filter((p): p is WriterProject => isWriterProject(p)),
+      )
+      if (marketTrend.decayDays <= 0) {
+        marketTrend = generateMarketTrend(newDay)
+        log(
+          newDay,
+          'morning',
+          'system',
+          `网文圈风向变了：本月流行【${marketTrend.name}】，相关题材与标签更容易获得流量扶持。`,
+        )
       }
 
       // 网文江湖每日模拟：NPC 更新 + 排行榜 + 互动 + 梗传播 + 传闻
@@ -1620,6 +1678,7 @@ export function useGame(initialSetup?: StartSetup) {
             ].slice(-30),
             memeTrends: platformResult.memeTrends,
           },
+          marketTrend,
         })
         setEnding(midEnding)
         log(newDay, 'morning', 'celebrate', `结局解锁：${midEnding.title}`)
@@ -1651,6 +1710,7 @@ export function useGame(initialSetup?: StartSetup) {
           ].slice(-30),
           memeTrends: platformResult.memeTrends,
         },
+        marketTrend,
       }
 
       // 每日检测网文圈危机/吃瓜事件
@@ -1852,6 +1912,7 @@ export function useGame(initialSetup?: StartSetup) {
     pendingEvent,
     ending,
     pathSnapshot,
+    authorProfile: state.authorProfile,
     // 派生上限
     maxEnergy,
     maxStress,

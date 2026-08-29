@@ -1,4 +1,9 @@
 import type { ActionDef, GameState, PlayerLocation, TimeSlot } from '../types/game'
+import { generateMarketTrend } from './marketTrends'
+import {
+  createAuthorProfile,
+  createEmptyWriterCareerProfile,
+} from '../engine/careerEngine'
 
 /** 总天数 */
 export const TOTAL_DAYS = 60
@@ -112,6 +117,9 @@ export const INITIAL_STATE: GameState = {
     interactions: [],
     memeTrends: [],
   },
+  marketTrend: generateMarketTrend(1),
+  authorProfile: createAuthorProfile('咸鱼作者'),
+  writerCareerProfile: createEmptyWriterCareerProfile(),
   stats: {
     savings: 8000,
     health: 80,
