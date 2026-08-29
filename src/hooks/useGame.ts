@@ -400,6 +400,31 @@ export function useGame(initialSetup?: StartSetup) {
       setCurrentChain(chain)
       setCurrentStepId(chain.steps[0].stepId)
       setStepDepth(0)
+
+      // 标记同人衍生相关事件链已触发，避免单作品重复触发
+      if (
+        chainId === 'fanfiction_blowup' ||
+        chainId === 'fanfiction_copyright' ||
+        chainId === 'fanfiction_payback'
+      ) {
+        setState((prev) => {
+          const projectIdx = prev.careerProjects.findIndex(
+            (p): p is WriterProject =>
+              isWriterProject(p) &&
+              p.stage !== 'COMPLETED' &&
+              p.stage !== 'ABANDONED',
+          )
+          if (projectIdx === -1) return prev
+          const project = prev.careerProjects[projectIdx] as WriterProject
+          const flags = { ...project.triggeredFanfictionChains }
+          if (chainId === 'fanfiction_blowup') flags.blowup = true
+          if (chainId === 'fanfiction_copyright') flags.copyright = true
+          if (chainId === 'fanfiction_payback') flags.payback = true
+          const nextProjects = [...prev.careerProjects]
+          nextProjects[projectIdx] = { ...project, triggeredFanfictionChains: flags }
+          return { ...prev, careerProjects: nextProjects }
+        })
+      }
     },
     [log],
   )
@@ -1228,6 +1253,50 @@ export function useGame(initialSetup?: StartSetup) {
     // 评论区逼宫：读者情绪负面或质量下滑
     if (project.readerMood < -20 || project.quality < 40) {
       return 'writer_comment_revolt'
+    }
+
+    // 同人衍生专属事件链
+    if (project.tags.includes('fanfiction_derivative')) {
+      const platform = PLATFORMS[project.platformId]
+      const isStrictCommercialPlatform = platform?.businessModel === 'SUBSCRIPTION'
+
+      // 同人爆火：热度高、字数达标、质量出众，可能引发原作作者/粉丝对线
+      if (
+        !project.triggeredFanfictionChains.blowup &&
+        project.metrics.currentHype >= 65 &&
+        project.wordCount >= 30_000
+      ) {
+        const qualityBonus = project.quality >= 70 ? 0.05 : 0
+        if (Math.random() < 0.08 + qualityBonus) {
+          return 'fanfiction_blowup'
+        }
+      }
+
+      // 版权危机：在商业订阅大站且已产生收益，可能被原作方/平台警告
+      if (
+        !project.triggeredFanfictionChains.copyright &&
+        isStrictCommercialPlatform &&
+        (project.stage === 'LAUNCHED' || project.stage === 'SERIALIZING') &&
+        project.stats.totalRevenue > 0
+      ) {
+        const riskBonus =
+          project.commerciality >= 75 && project.stats.bugOrControversy >= 40 ? 0.1 : 0
+        if (Math.random() < 0.05 + riskBonus) {
+          return 'fanfiction_copyright'
+        }
+      }
+
+      // 原作粉丝反哺：热度健康、口碑正面时，原作读者自来水安利
+      if (
+        !project.triggeredFanfictionChains.payback &&
+        project.metrics.currentHype >= 40 &&
+        project.readerMood >= 20 &&
+        project.quality >= 55
+      ) {
+        if (Math.random() < 0.06) {
+          return 'fanfiction_payback'
+        }
+      }
     }
 
     return null

@@ -436,7 +436,7 @@ export default function WriterWorkModal({
                         />
                         <button
                           type="button"
-                          onClick={() => setDraft((d) => ({ ...d, title: generateWriterTitle(d) }))}
+                          onClick={() => setDraft((d) => ({ ...d, title: generateWriterTitle(undefined) }))}
                           className="rounded-lg bg-slate-100 px-3 text-sm text-slate-600 hover:bg-slate-200"
                         >
                           🎲

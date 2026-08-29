@@ -136,6 +136,7 @@ export type WriterStrategy =
   | 'FILLER' // 水字数
   | 'CLIFFHANGER' // 悬念钩子
   | 'TROPE_INSERT' // 跟风整活
+  | 'FANFICTION' // 同人衍生：蹭原作热度，风险与回报并存
 
 /** 主题材：决定作品基础调性 */
 export type MainGenre =
@@ -410,6 +411,13 @@ export interface WriterProject extends CareerProject {
   authorSkillSnapshot: AuthorSkills
   /** 创建本书时触发的履历化学反应快照 */
   backgroundBonuses: BackgroundBonus[]
+
+  /** 同人衍生相关事件链是否已触发过 */
+  triggeredFanfictionChains: {
+    blowup: boolean
+    copyright: boolean
+    payback: boolean
+  }
 }
 
 /** 判断一个项目是否为网文项目 */

@@ -849,6 +849,11 @@ export function createWriterProject(
     viralSurgeDays: 0,
     authorSkillSnapshot: authorProfile.skills,
     backgroundBonuses,
+    triggeredFanfictionChains: {
+      blowup: false,
+      copyright: false,
+      payback: false,
+    },
   }
 
   // 应用全局履历效果（初始粉丝、追读修正、隐患等）

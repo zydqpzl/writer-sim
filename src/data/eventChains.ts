@@ -16,6 +16,12 @@ import {
   HOMETOWN_CHAIN,
 } from './chains/hometown'
 import {
+  CARD_OOC_GOD,
+  FANFICTION_BLOWUP_CHAIN,
+  FANFICTION_COPYRIGHT_CHAIN,
+  FANFICTION_PAYBACK_CHAIN,
+} from './chains/fanfictionDrama'
+import {
   WRITER_BLACKFAN_CHAIN,
   WRITER_FULLATTENDANCE_CHAIN,
   WRITER_REJECTION_CHAIN,
@@ -50,6 +56,7 @@ export const CARD_POOL: Record<string, InspirationCard> = {
   card_hometown_irony: CARD_HOMETOWN_IRONY,
   card_hometown_peace: CARD_HOMETOWN_PEACE,
   card_mouth_gun: CARD_MOUTH_GUN,
+  card_ooc_god: CARD_OOC_GOD,
 }
 
 /**
@@ -66,4 +73,7 @@ export const EVENT_CHAINS: Record<string, EventChain> = {
   writer_peer_roast: WRITER_PEER_ROAST_CHAIN,
   writer_anti_piracy: WRITER_ANTI_PIRACY_CHAIN,
   writer_comment_revolt: WRITER_COMMENT_REVOLT_CHAIN,
+  fanfiction_blowup: FANFICTION_BLOWUP_CHAIN,
+  fanfiction_copyright: FANFICTION_COPYRIGHT_CHAIN,
+  fanfiction_payback: FANFICTION_PAYBACK_CHAIN,
 }

@@ -190,6 +190,19 @@ export const WRITER_STRATEGIES: WriterStrategyConfig[] = [
       '老粉失望，感觉为了流量不要质量了。',
     ],
   },
+  {
+    id: 'FANFICTION',
+    name: '同人衍生',
+    desc: '借爆款 IP 的世界观与人设二创，前期吸量极强，但受制于原作口碑与平台政策。',
+    readerComments: [
+      '这个同人补全了原作最大的意难平，吹爆！',
+      '比原作者写得还对味儿，原作者退位让你写吧！',
+      '严重 OOC，主角绝不可能说这种话，退钱！',
+      '吃原作红利还踩原作一脚，恶心。',
+      '没看过原作能看懂吗？感觉入坑门槛有点高。',
+      '原作已经太监了，靠同人才续命，泪目。',
+    ],
+  },
 ]
 
 /* ============== 写作动作定义 ============== */
@@ -258,6 +271,19 @@ export const WRITER_ACTIONS: WriterAction[] = [
     wordCountAdd: 3_000,
     retentionDelta: 0.02,
     readerMoodDelta: -8,
+    countsAsDailyUpdate: true,
+  },
+  {
+    id: 'writer_fanfiction',
+    name: '同人衍生',
+    description: '借爆款 IP 二创，自带初始流量，但可能触怒原作粉或平台。',
+    strategy: 'FANFICTION',
+    phaseRequired: ['CONCEPT', 'DEVELOPING', 'LAUNCHED'],
+    cost: { energy: -15, stress: 5 },
+    effects: { progressAdd: 4, commercialityAdd: 1, memeValueAdd: 3, hypeBoost: 10 },
+    wordCountAdd: 3_500,
+    retentionDelta: 0.05,
+    readerMoodDelta: -5,
     countsAsDailyUpdate: true,
   },
   // 元动作
