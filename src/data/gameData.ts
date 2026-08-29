@@ -187,6 +187,86 @@ export const ACTIONS: ActionDef[] = [
       stress: -12, // 休息降压
     },
   },
+  {
+    type: 'consume',
+    label: '咖啡续命',
+    desc: '花 30 元买杯咖啡，临时提振精神，但咖啡因也会让你更焦虑。',
+    icon: '☕',
+    accent: 'amber',
+    effects: {
+      savings: -30,
+      energy: 20,
+      stress: 2,
+    },
+    requirement: { minSavings: 30 },
+  },
+  {
+    type: 'consume',
+    label: '吃顿好的',
+    desc: '花 200 元犒劳自己一顿，压力骤降，身体也舒服点。',
+    icon: '🍜',
+    accent: 'orange',
+    effects: {
+      savings: -200,
+      health: 5,
+      stress: -15,
+    },
+    requirement: { minSavings: 200 },
+  },
+  {
+    type: 'consume',
+    label: '心理咨询',
+    desc: '花 1000 元找专业咨询师聊聊，把压力清空一大截。',
+    icon: '🛋️',
+    accent: 'teal',
+    effects: {
+      savings: -1000,
+      health: 5,
+      stress: -40,
+    },
+    requirement: { minSavings: 1000 },
+  },
+  {
+    type: 'consume',
+    label: '健身房办卡',
+    desc: '花 800 元办月卡，亚健康不能忍，身体是革命本钱。',
+    icon: '🏋️',
+    accent: 'emerald',
+    effects: {
+      savings: -800,
+      health: 15,
+      energy: 10,
+      stress: -5,
+    },
+    requirement: { minSavings: 800 },
+  },
+  {
+    type: 'consume',
+    label: '给家里打钱',
+    desc: '花 500 元孝敬父母，换来家庭满意度与良心安稳。',
+    icon: '💸',
+    accent: 'rose',
+    effects: {
+      savings: -500,
+      stress: -5,
+      familyApproval: 20,
+    },
+    requirement: { minSavings: 500 },
+  },
+  {
+    type: 'consume',
+    label: '升级写作设备',
+    desc: '花 2500 元换把人体工学椅+机械键盘，长期伏案也能多撑一会儿。',
+    icon: '⌨️',
+    accent: 'sky',
+    effects: {
+      savings: -2500,
+      health: 10,
+      energy: 15,
+      stress: -3,
+    },
+    requirement: { minSavings: 2500 },
+  },
 ]
 
 /** 应急保命兼职：极简确定性，无事件链，不掉落卡牌 */

@@ -77,10 +77,14 @@ export default function App() {
     () => legacyProfile.keptCardIds.length > 0 && legacyProfile.totalLegacyPoints > 0,
   )
 
-  // 按当前地点过滤主行动（城市/老家专属行动不混用）
-  const availableActions = ACTIONS.filter(
-    (a) => !a.location || a.location === state.location,
-  )
+  // 按当前地点与存款条件过滤主行动
+  const availableActions = ACTIONS.filter((a) => {
+    const locationOk = !a.location || a.location === state.location
+    const savingsOk = !a.requirement?.minSavings || state.stats.savings >= a.requirement.minSavings
+    const projectOk =
+      !a.requirement?.needsActiveWriterProject || !!activeProject
+    return locationOk && savingsOk && projectOk
+  })
   const emergencyAction = getEmergencyAction(state.location)
 
   return (

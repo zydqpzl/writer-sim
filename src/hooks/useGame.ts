@@ -61,7 +61,7 @@ import { INSPIRATION_BY_ID } from '../data/inspirations'
 import {
   STARTING_IDENTITY_BACKGROUNDS,
 } from '../data/backgrounds'
-import { PLATFORMS } from '../data/platforms'
+import { PLATFORMS, getPlatformAuthorRank } from '../data/platforms'
 import { generateMarketTrend, tickMarketTrend } from '../data/marketTrends'
 import { simulatePlatformDaily } from '../engine/platformEngine'
 import {
@@ -1550,15 +1550,38 @@ export function useGame(initialSetup?: StartSetup) {
       let careerSavingsDelta = 0
       let careerFansDelta = 0
       let careerStressDelta = 0
+      const platformCareerDelta: Record<
+        import('../types/platform').NovelPlatformId,
+        { revenue: number; fans: number }
+      > = {
+        ZHONGDIAN: { revenue: 0, fans: 0 },
+        KUAIYUE: { revenue: 0, fans: 0 },
+        SUCHUAN: { revenue: 0, fans: 0 },
+        LVJIANG: { revenue: 0, fans: 0 },
+      }
       if (state.careerProjects.length > 0) {
         const ticked: typeof state.careerProjects = []
         for (const project of state.careerProjects) {
           if (isWriterProject(project)) {
-            const result = dailyTickWriter(project, newDay, undefined, state.marketTrend)
+            const platformId = project.platformId
+            const career = state.writerCareerProfile.platformCareer[platformId]
+            const { currentRank } = getPlatformAuthorRank(
+              platformId,
+              career.totalRevenue,
+              career.totalFans,
+            )
+            const result = dailyTickWriter(project, newDay, undefined, state.marketTrend, Math.random, {
+              revenueShareMultiplier: currentRank.revenueShareMultiplier,
+              newBookBoostBonus: currentRank.newBookBoostBonus,
+              fullAttendanceBonus: currentRank.fullAttendanceBonus,
+              contractDifficultyModifier: currentRank.contractDifficultyModifier,
+            })
             ticked.push(result.project)
             careerSavingsDelta += result.playerDelta.savings ?? 0
             careerFansDelta += result.playerDelta.fans ?? 0
             careerStressDelta += result.playerDelta.stress ?? 0
+            platformCareerDelta[platformId].revenue += result.project.stats.totalRevenue - project.stats.totalRevenue
+            platformCareerDelta[platformId].fans += result.project.stats.totalFansGained - project.stats.totalFansGained
             result.logs.forEach((text) =>
               log(newDay, 'morning', 'info', text),
             )
@@ -1674,6 +1697,33 @@ export function useGame(initialSetup?: StartSetup) {
         )
       }
 
+      // 更新各平台作家等级（跨作品累计）
+      const nextPlatformCareer = { ...state.writerCareerProfile.platformCareer }
+      const platformIds: import('../types/platform').NovelPlatformId[] = ['ZHONGDIAN', 'KUAIYUE', 'SUCHUAN', 'LVJIANG']
+      for (const platformId of platformIds) {
+        const prev = nextPlatformCareer[platformId]
+        const nextRevenue = prev.totalRevenue + platformCareerDelta[platformId].revenue
+        const nextFans = prev.totalFans + platformCareerDelta[platformId].fans
+        const { currentRank, nextRank } = getPlatformAuthorRank(platformId, nextRevenue, nextFans)
+        if (currentRank.id !== prev.currentRankId && nextRank) {
+          log(
+            newDay,
+            'morning',
+            'celebrate',
+            `【${PLATFORMS[platformId].name}】作家等级提升：${currentRank.name}！${currentRank.description}`,
+          )
+        }
+        nextPlatformCareer[platformId] = {
+          totalRevenue: nextRevenue,
+          totalFans: nextFans,
+          currentRankId: currentRank.id,
+        }
+      }
+      const nextWriterCareerProfile: WriterCareerProfile = {
+        ...state.writerCareerProfile,
+        platformCareer: nextPlatformCareer,
+      }
+
       // 限时奇遇刷新：40% 概率刷出一条今日有效的奇遇
       // 回老家后加入专属返乡链，城市奇遇在老家也可用（手机接单/亲戚串门）
       const encounterCandidates =
@@ -1734,6 +1784,7 @@ export function useGame(initialSetup?: StartSetup) {
           activeTraits: traitResult.traits,
           careerProjects: careerProjectsTicked,
           authorRank: newAuthorRank,
+          writerCareerProfile: nextWriterCareerProfile,
           platformEcosystem: {
             npcs: platformResult.updatedNpcs,
             leaderboards: platformResult.updatedLeaderboards,
@@ -1766,6 +1817,7 @@ export function useGame(initialSetup?: StartSetup) {
         activeTraits: traitResult.traits,
         careerProjects: careerProjectsTicked,
         authorRank: newAuthorRank,
+        writerCareerProfile: nextWriterCareerProfile,
         platformEcosystem: {
           npcs: platformResult.updatedNpcs,
           leaderboards: platformResult.updatedLeaderboards,

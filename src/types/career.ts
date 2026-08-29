@@ -322,6 +322,15 @@ export interface WriterCareerProfile {
   totalCompletedBooks: number
   /** 历史太监数 */
   totalAbandonedBooks: number
+  /** 各平台累计收益与粉丝（用于作家等级判定） */
+  platformCareer: Record<
+    import('./platform').NovelPlatformId,
+    {
+      totalRevenue: number
+      totalFans: number
+      currentRankId: string
+    }
+  >
 }
 
 /** 掌控力校验结果 */

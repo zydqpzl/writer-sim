@@ -32,6 +32,7 @@ export type ActionType =
   | 'social' // 运营社交媒体
   | 'family' // 沟通父母
   | 'rest' // 摆烂/休息
+  | 'consume' // 消费/花钱改善状态
   | 'parttime' // 应急保命兼职（极简确定性）
   | 'subculture' // 亚文化奇遇兼职（触发事件链）
   | 'hometown_parttime' // 县城老家帮工（低收益低压力）
@@ -186,6 +187,13 @@ export interface ActionDef {
     familyApproval?: number
     influence?: number
     fans?: number
+  }
+  /** 使用前提条件 */
+  requirement?: {
+    /** 最低存款 */
+    minSavings?: number
+    /** 是否需要存在进行中的网文项目（用于消费项目类行动） */
+    needsActiveWriterProject?: boolean
   }
 }
 

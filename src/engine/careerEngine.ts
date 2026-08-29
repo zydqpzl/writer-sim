@@ -102,11 +102,24 @@ export function createEmptyWriterCareerProfile(): WriterCareerProfile {
       proficiency: 0,
     }
   }
+  const platformCareer = {} as Record<
+    import('../types/platform').NovelPlatformId,
+    { totalRevenue: number; totalFans: number; currentRankId: string }
+  >
+  for (const platformId of ['ZHONGDIAN', 'KUAIYUE', 'SUCHUAN', 'LVJIANG'] as const) {
+    platformCareer[platformId] = {
+      totalRevenue: 0,
+      totalFans: 0,
+      currentRankId: PLATFORMS[platformId].authorRanks[0].id,
+    }
+  }
+
   return {
     genreMastery,
     unlockedStyleTraits: [],
     totalCompletedBooks: 0,
     totalAbandonedBooks: 0,
+    platformCareer,
   }
 }
 
@@ -891,6 +904,7 @@ function trySign(
   platform: NovelPlatform,
   _day: number,
   rng: () => number = Math.random,
+  contractDifficultyModifier: number = 0,
 ): { project: WriterProject; log?: string; signed: boolean } {
   if (p.stage === 'CONCEPT' && p.wordCount >= WRITER_SIGNING_THRESHOLD_WORDS) {
     // 算法分 = 平台偏好的三维加权
@@ -899,9 +913,12 @@ function trySign(
       p.commerciality * platform.algorithmFocus.commerciality +
       p.memeValue * platform.algorithmFocus.memeValue
 
-    // 签约阈值：平台基础难度 - 新书扶持（新书更容易签）
-    const threshold =
-      platform.baseContractDifficulty * (1 - platform.newBookBoost * 0.5)
+    // 签约阈值：平台基础难度 - 新书扶持（新书更容易签）- 作家等级修正
+    const threshold = clamp(
+      platform.baseContractDifficulty * (1 - platform.newBookBoost * 0.5) - contractDifficultyModifier,
+      10,
+      100,
+    )
 
     // 随机浮动 ±10%
     const roll = algorithmScore * randomRange([0.9, 1.1], rng)
@@ -1194,7 +1211,7 @@ export function applyWriterAction(
   }
 
   // 10. 阶段流转（签约 / 上架）
-  const signResult = trySign(next, platform, currentDay, rng)
+  const signResult = trySign(next, platform, currentDay, rng, rankEffects.contractDifficultyModifier)
   if (signResult.log) logs.push(signResult.log)
   next = signResult.project
 
@@ -1258,6 +1275,12 @@ export function dailyTickWriter(
   platform: NovelPlatform = PLATFORMS[project.platformId],
   trend?: import('../types/career').MarketTrend,
   rng: () => number = Math.random,
+  rankEffects: {
+    revenueShareMultiplier?: number
+    newBookBoostBonus?: number
+    fullAttendanceBonus?: number
+    contractDifficultyModifier?: number
+  } = {},
 ): CareerDailyResult {
   // 完结/太监项目不再主动发酵，只保留余热或惩罚
   if (project.stage === 'COMPLETED') {
@@ -1329,7 +1352,10 @@ export function dailyTickWriter(
 
   // 应用生长曲线（前期/后期系数、爆火状态）
   const bookAgeDays = currentDay - next.dayCreated
-  const exposure = applyGrowthCurve(next, rawExposure, bookAgeDays)
+  let exposure = applyGrowthCurve(next, rawExposure, bookAgeDays)
+
+  // 应用作家等级带来的新书流量扶持
+  exposure *= 1 + (rankEffects.newBookBoostBonus ?? 0)
   next.metrics = {
     ...next.metrics,
     viewsOrReaders: next.metrics.viewsOrReaders + exposure,
@@ -1376,6 +1402,9 @@ export function dailyTickWriter(
         break
     }
   }
+
+  // 应用作家等级分成倍率
+  revenue *= rankEffects.revenueShareMultiplier ?? 1
 
   // 刚上架的作品有首订加成
   if (next.stage === 'LAUNCHED' && next.dayLaunched === currentDay - 1) {
@@ -1463,7 +1492,7 @@ export function dailyTickWriter(
     next.stage !== 'CONCEPT' &&
     next.dailyWordCount >= WRITER_FULL_ATTENDANCE_DAILY_WORDS
   ) {
-    fullAttendanceReward = WRITER_FULL_ATTENDANCE_DAILY_REWARD
+    fullAttendanceReward = WRITER_FULL_ATTENDANCE_DAILY_REWARD + (rankEffects.fullAttendanceBonus ?? 0)
     logs.push(
       `《${next.title}》日更 ${next.dailyWordCount.toLocaleString('zh-CN')} 字，获得全勤奖励 +${fullAttendanceReward} 元。`,
     )

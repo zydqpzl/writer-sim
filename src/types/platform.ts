@@ -18,6 +18,27 @@ export interface AlgorithmFocus {
   hype: number
 }
 
+/** 平台作家等级：不同平台有各自称谓与门槛 */
+export interface PlatformAuthorRank {
+  id: string
+  /** 等级显示名 */
+  name: string
+  /** 累计收益门槛（元） */
+  revenueThreshold: number
+  /** 累计粉丝门槛 */
+  fanThreshold: number
+  /** 分成倍率：影响最终收益 */
+  revenueShareMultiplier: number
+  /** 新书流量扶持额外加成（0-1） */
+  newBookBoostBonus: number
+  /** 签约难度修正（负数降低难度） */
+  contractDifficultyModifier: number
+  /** 全勤奖额外加成（元） */
+  fullAttendanceBonus: number
+  /** 等级描述 */
+  description: string
+}
+
 /** 小说平台定义 */
 export interface NovelPlatform {
   id: NovelPlatformId
@@ -46,6 +67,8 @@ export interface NovelPlatform {
     antiPiracy: number
     commentRevolt: number
   }
+  /** 平台作家等级体系（从低到高排列） */
+  authorRanks: PlatformAuthorRank[]
 }
 
 /** NPC 同行写作风格 */
