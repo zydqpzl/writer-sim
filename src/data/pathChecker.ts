@@ -199,8 +199,7 @@ export function checkGameEnding(state: GameState): Ending | null {
         if (dominant === 'REALITY_COMPROMISE' && examProgress >= 40) return ending
         break
       case 'BALANCED_WANDERER':
-        // 兜底结局：只要游戏自然结束（60天）就触发
-        if (state.day >= 60) return ending
+        // 兜底结局：仅玩家主动选择封笔时触发，不再因到达第 60 天自动触发
         break
     }
   }
@@ -209,8 +208,8 @@ export function checkGameEnding(state: GameState): Ending | null {
 }
 
 /**
- * 第 60 天强制结局判定。
- * 若已有燃尽等中途结局，本函数不会覆盖；仅用于自然流程结束。
+ * 玩家主动选择封笔时，根据当前状态解析最终结局。
+ * 不再在第 60 天强制结束游戏。
  */
 export function resolveFinalEnding(state: GameState): Ending {
   return checkGameEnding(state) ?? ENDINGS[ENDINGS.length - 1]

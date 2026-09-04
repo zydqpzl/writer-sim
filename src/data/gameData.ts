@@ -15,8 +15,11 @@ import {
 } from './lifestyleItems'
 import { cloneTrait } from './traits'
 
-/** 总天数 */
-export const TOTAL_DAYS = 60
+/** 每年天数（一个年度周期长度） */
+export const YEAR_LENGTH = 60
+
+/** @deprecated 使用 YEAR_LENGTH */
+export const TOTAL_DAYS = YEAR_LENGTH
 
 /** 时段顺序与展示信息 */
 export const TIME_SLOTS: { key: TimeSlot; label: string; icon: string }[] = [
@@ -145,6 +148,21 @@ export const INITIAL_STATE: GameState = {
     familyApproval: 65,
     influence: 5,
     fans: 12,
+  },
+  pendingYearSummary: null,
+  yearStartSnapshot: {
+    day: 1,
+    stats: {
+      savings: 8000,
+      health: 80,
+      energy: 75,
+      stress: 130,
+      familyApproval: 65,
+      influence: 5,
+      fans: 12,
+    },
+    writerCareerProfile: createEmptyWriterCareerProfile(),
+    totalWordCount: 0,
   },
 }
 

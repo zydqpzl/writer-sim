@@ -102,6 +102,41 @@ export interface Ending {
   hint: string
 }
 
+/** 年度总结报告 */
+export interface YearSummary {
+  /** 刚结束的年份（第 1 年、第 2 年……） */
+  year: number
+  /** 本年开始的天数 */
+  startDay: number
+  /** 本年结束的天数 */
+  endDay: number
+  /** 本年开始时的属性快照 */
+  startStats: PlayerStats
+  /** 本年结束时的属性快照 */
+  endStats: PlayerStats
+  /** 本年开始时的生涯档案快照 */
+  startWriterProfile: import('./career').WriterCareerProfile
+  /** 本年结束时的生涯档案快照 */
+  endWriterProfile: import('./career').WriterCareerProfile
+  /** 本年度核心数字 */
+  stats: {
+    /** 新增字数 */
+    wordCountDelta: number
+    /** 新增收益（元） */
+    revenueDelta: number
+    /** 新增粉丝 */
+    fansDelta: number
+    /** 完本数 */
+    completedBooks: number
+    /** 太监数 */
+    abandonedBooks: number
+  }
+  /** 本年度大事件摘要 */
+  majorEvents: string[]
+  /** 下一年环境预告 */
+  nextYearForecast: string
+}
+
 /** 路线判定快照（用于 UI 趋势展示） */
 export interface PathSnapshot {
   dominant: LifePath
@@ -110,7 +145,7 @@ export interface PathSnapshot {
 
 /** 游戏全局状态 */
 export interface GameState {
-  /** 当前天数 1-60 */
+  /** 当前天数（不再限制为 60 天，每 60 天为一个年度周期） */
   day: number
   /** 当前时段 */
   slot: TimeSlot
@@ -168,6 +203,15 @@ export interface GameState {
   unlockedAuthorTitleIds: string[]
   /** 本局新解锁的成就 id（用于结算提示与跨局持久化） */
   newUnlockedAchievementIds: string[]
+  /** 待展示的年度总结报告（null 表示没有待处理的年度总结） */
+  pendingYearSummary: YearSummary | null
+  /** 本年初的状态快照（用于生成年度总结） */
+  yearStartSnapshot: {
+    day: number
+    stats: PlayerStats
+    writerCareerProfile: import('./career').WriterCareerProfile
+    totalWordCount: number
+  }
 }
 
 /** 日志条目类型 */

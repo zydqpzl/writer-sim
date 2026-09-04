@@ -12,6 +12,7 @@ import PlatformEcosystemPanel from './components/PlatformEcosystemPanel'
 import AchievementModal from './components/AchievementModal'
 import PlayerStatusPanel from './components/PlayerStatusPanel'
 import WriterProjectPanel from './components/WriterProjectPanel'
+import YearSummaryModal from './components/YearSummaryModal'
 import { legacyPointsFor } from './data/legacy'
 import type { StartingIdentity } from './data/legacy'
 import type { WriterProject } from './types/career'
@@ -20,7 +21,7 @@ import {
   ACTIONS,
   PART_TIME_WARNING_LINE,
   REALITY_PUNCH_THRESHOLD,
-  TOTAL_DAYS,
+  YEAR_LENGTH,
   getEmergencyAction,
 } from './data/gameData'
 import { PLATFORM_LIST } from './data/platforms'
@@ -48,6 +49,8 @@ export default function App() {
     dismissEvent,
     selectEventOption,
     restart,
+    continueToNextYear,
+    retireNow,
     legacyProfile,
     settleEnding,
     startWriterProject,
@@ -61,6 +64,7 @@ export default function App() {
     debugTriggerBreakdown,
     debugGrantTrait,
     debugStartWriterEventChain,
+    debugJumpToYearEnd,
     applyMemeHomageToActiveProject,
     authorProfile,
   } = useGame()
@@ -205,6 +209,22 @@ export default function App() {
               >
                 Stress 归零（重置）
               </button>
+            </div>
+
+            {/* 年度总结调试 */}
+            <div className="mt-3 border-t border-slate-200 pt-3">
+              <div className="mb-2 text-xs font-semibold text-slate-500">
+                📜 年度总结调试
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={debugJumpToYearEnd}
+                  className="rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-200"
+                >
+                  跳至本年末（测试年度总结）
+                </button>
+              </div>
             </div>
 
             {/* CareerEngine：网络作家快捷测试 */}
@@ -439,7 +459,7 @@ export default function App() {
             <PlayerStatusPanel
               stats={state.stats}
               day={state.day}
-              totalDays={TOTAL_DAYS}
+              yearLength={YEAR_LENGTH}
               location={state.location}
               pathSnapshot={pathSnapshot}
               warningLine={PART_TIME_WARNING_LINE}
@@ -461,7 +481,7 @@ export default function App() {
           <div className="lg:col-span-6">
             <DayActionPanel
               state={state}
-              totalDays={TOTAL_DAYS}
+              yearLength={YEAR_LENGTH}
               actions={availableActions}
               emergencyAction={emergencyAction}
               warningLine={PART_TIME_WARNING_LINE}
@@ -580,6 +600,15 @@ export default function App() {
             ])
           }
           onClose={() => setAchievementOpen(false)}
+        />
+      )}
+
+      {/* 年度总结弹窗 */}
+      {state.pendingYearSummary && (
+        <YearSummaryModal
+          summary={state.pendingYearSummary}
+          onContinue={continueToNextYear}
+          onRetire={retireNow}
         />
       )}
 

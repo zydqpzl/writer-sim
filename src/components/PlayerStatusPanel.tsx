@@ -70,7 +70,7 @@ function formatValue(attr: AttrMeta, value: number, maxEnergy: number, maxStress
 interface Props {
   stats: PlayerStats
   day: number
-  totalDays: number
+  yearLength: number
   location: PlayerLocation
   pathSnapshot: PathSnapshot
   warningLine: number
@@ -97,7 +97,7 @@ const LOCATION_LABEL: Record<PlayerLocation, { label: string; chip: string; icon
 export default function PlayerStatusPanel({
   stats,
   day,
-  totalDays,
+  yearLength,
   location,
   pathSnapshot,
   warningLine,
@@ -107,7 +107,9 @@ export default function PlayerStatusPanel({
   maxEnergy,
   maxStress,
 }: Props) {
-  const progress = Math.round((day / totalDays) * 100)
+  const year = Math.ceil(day / yearLength)
+  const dayOfYear = ((day - 1) % yearLength) + 1
+  const progress = Math.round((dayOfYear / yearLength) * 100)
   const isWarning = stats.savings < warningLine
 
   // 按卡牌名聚合计数
@@ -138,7 +140,7 @@ export default function PlayerStatusPanel({
           </span>
           <div className="mt-1.5 flex items-center gap-2">
             <span className="text-sm font-semibold text-slate-700">
-              第 {day} / {totalDays} 天
+              第 {year} 年 · 第 {dayOfYear} / {yearLength} 天
             </span>
           </div>
           <div className="mt-1.5 h-1.5 w-28 overflow-hidden rounded-full bg-slate-200">

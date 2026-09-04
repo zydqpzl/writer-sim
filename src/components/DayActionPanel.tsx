@@ -3,7 +3,7 @@ import type { WriterProject } from '../types/career'
 
 interface Props {
   state: GameState
-  totalDays: number
+  yearLength: number
   actions: ActionDef[]
   /** 应急保命兼职 */
   emergencyAction: ActionDef
@@ -86,7 +86,7 @@ function effectLabel(key: keyof ActionDef['effects']): string {
 
 export default function DayActionPanel({
   state,
-  totalDays,
+  yearLength,
   actions,
   emergencyAction,
   warningLine,
@@ -100,6 +100,8 @@ export default function DayActionPanel({
 }: Props) {
   const { day, slot, actedThisSlot, partTimeLock, consecutivePartTimeDays } =
     state
+  const year = Math.ceil(day / yearLength)
+  const dayOfYear = ((day - 1) % yearLength) + 1
   const accent = ACCENT_MAP
 
   const canEmergency = state.stats.savings < warningLine
@@ -117,7 +119,7 @@ export default function DayActionPanel({
               今日行动
             </h2>
             <p className="mt-0.5 text-lg font-semibold text-slate-800">
-              第 {day} 天 · {SLOT_LABEL[slot]} {SLOT_ICON[slot]}
+              第 {year} 年 · 第 {dayOfYear} 天 · {SLOT_LABEL[slot]} {SLOT_ICON[slot]}
             </p>
           </div>
           <div className="flex flex-col items-end gap-1.5">
@@ -400,7 +402,7 @@ export default function DayActionPanel({
         <button
           type="button"
           onClick={onNext}
-          disabled={!actedThisSlot && day < totalDays}
+          disabled={!actedThisSlot}
           className={[
             'rounded-xl px-4 py-2 text-sm font-semibold transition-colors',
             actedThisSlot

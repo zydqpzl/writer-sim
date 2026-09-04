@@ -27,6 +27,7 @@ import {
   bumpPathScore,
   checkGameEnding,
   getPathSnapshot,
+  resolveFinalEnding,
   updatePathScores,
 } from '../data/pathChecker'
 import { cloneTrait } from '../data/traits'
@@ -41,12 +42,13 @@ import {
   REALITY_PUNCH_THRESHOLD,
   STRESS_MAX,
   STRESS_THRESHOLDS,
-  TOTAL_DAYS,
+  YEAR_LENGTH,
   VIRAL_BONUS_SAVINGS,
   getEmergencyAction,
 } from '../data/gameData'
 import { AUTHOR_TITLES, AUTHOR_TITLE_BY_ID } from '../data/authorTitles'
 import { ACHIEVEMENT_BY_ID, checkNewAchievements } from '../data/achievements'
+import { createYearStartSnapshot, generateYearSummary } from '../data/yearSummary'
 import {
   HOUSING_BY_ID,
   INSURANCE_ITEMS,
@@ -489,6 +491,30 @@ export function useGame(initialSetup?: StartSetup) {
     },
     [],
   )
+
+  /** 年度总结：选择继续写，进入下一年 */
+  const continueToNextYear = useCallback(() => {
+    if (!state.pendingYearSummary) return
+    setState({
+      ...state,
+      pendingYearSummary: null,
+      yearStartSnapshot: createYearStartSnapshot(state),
+    })
+    log(
+      state.day,
+      'morning',
+      'celebrate',
+      `第 ${state.pendingYearSummary.year + 1} 年开始，江湖仍在继续。`,
+    )
+  }, [state, log])
+
+  /** 年度总结：选择封笔退休，触发结局结算 */
+  const retireNow = useCallback(() => {
+    if (!state.pendingYearSummary) return
+    const finalEnding = resolveFinalEnding(state)
+    setEnding(finalEnding)
+    log(state.day, 'morning', 'celebrate', `结局解锁：${finalEnding.title}`)
+  }, [state, log])
 
   const emitEvent = useCallback(
     (
@@ -1773,18 +1799,12 @@ export function useGame(initialSetup?: StartSetup) {
 
   /** 推进至下一时段 / 次日 */
   const advance = useCallback(() => {
+    if (state.pendingYearSummary) return
     if (!state.actedThisSlot) return
     const next = NEXT_SLOT[state.slot]
 
     if (next === 'next-day') {
       const newDay = state.day + 1
-      if (newDay > TOTAL_DAYS) {
-        // 游戏自然结束，根据最终状态判定结局
-        const finalEnding = checkGameEnding(state) ?? ENDINGS[ENDINGS.length - 1]
-        setEnding(finalEnding)
-        log(state.day, state.slot, 'celebrate', `结局解锁：${finalEnding.title}`)
-        return
-      }
 
       // 地点相关每日开销：住房按当前 housingId 月租折算，回老家免房租但有家庭压力
       const dailyRent =
@@ -2247,13 +2267,24 @@ export function useGame(initialSetup?: StartSetup) {
         return
       }
 
+      // 年度总结：每 60 天为一个年度周期，次年开始时弹窗让玩家选择继续或封笔
+      const isYearEnd = newDay > 1 && (newDay - 1) % YEAR_LENGTH === 0
+      if (isYearEnd) {
+        const summary = generateYearSummary(nextState, logs)
+        if (summary) {
+          setState({ ...nextState, pendingYearSummary: summary })
+          log(newDay, 'morning', 'celebrate', `第 ${summary.year} 年结束，年度总结已生成。`)
+          return
+        }
+      }
+
       setState(nextState)
       return
     }
 
     log(state.day, next, 'info', `进入${SLOT_LABEL[next]}时段。`)
     setState({ ...state, slot: next, actedThisSlot: false })
-  }, [state, log])
+  }, [state, log, logs])
 
   // 当前阶段（解析后）
   const currentStep: EventStep | null = useMemo(() => {
@@ -2380,6 +2411,19 @@ export function useGame(initialSetup?: StartSetup) {
     [state, log, currentChain, startWriterEventChain],
   )
 
+  /** 【调试】直接跳到本年度最后一天晚上，用于测试年度总结弹窗 */
+  const debugJumpToYearEnd = useCallback(() => {
+    const year = Math.ceil(state.day / YEAR_LENGTH)
+    const lastDayOfYear = year * YEAR_LENGTH
+    setState({
+      ...state,
+      day: lastDayOfYear,
+      slot: 'evening',
+      actedThisSlot: true,
+    })
+    log(state.day, state.slot, 'system', `【调试】已跳转至第 ${year} 年末。`)
+  }, [state, log])
+
   // 派生量（供 UI 显示精力/压力的实际上限）
   const maxEnergy = useMemo(() => computeMaxEnergy(state), [state])
   const maxStress = useMemo(() => computeMaxStress(state), [state])
@@ -2412,6 +2456,9 @@ export function useGame(initialSetup?: StartSetup) {
     dismissEvent,
     selectEventOption,
     restart,
+    // 年度总结
+    continueToNextYear,
+    retireNow,
     // Roguelite 遗产
     legacyProfile,
     settleEnding,
@@ -2430,6 +2477,7 @@ export function useGame(initialSetup?: StartSetup) {
     debugTriggerBreakdown,
     debugGrantTrait,
     debugStartWriterEventChain,
+    debugJumpToYearEnd,
   }
 }
 
