@@ -21,7 +21,7 @@ export interface AlgorithmFocus {
 /** 平台作家等级：不同平台有各自称谓与门槛 */
 export interface PlatformAuthorRank {
   id: string
-  /** 等级显示名 */
+  /** 等级显示名（官方职级，去梗化） */
   name: string
   /** 累计收益门槛（元） */
   revenueThreshold: number
@@ -33,10 +33,18 @@ export interface PlatformAuthorRank {
   newBookBoostBonus: number
   /** 签约难度修正（负数降低难度） */
   contractDifficultyModifier: number
-  /** 全勤奖额外加成（元） */
+  /** 全勤奖/月度津贴额外加成（元） */
   fullAttendanceBonus: number
   /** 等级描述 */
   description: string
+  /** 合同性质与定位（用于 UI 展示） */
+  contractType?: string
+  /** 基础分成比例（%） */
+  baseShare?: number
+  /** 月度津贴/保底（元） */
+  monthlyAllowance?: number
+  /** 核心特权列表 */
+  privileges?: string[]
 }
 
 /** 小说平台定义 */

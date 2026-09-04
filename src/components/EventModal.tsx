@@ -170,7 +170,7 @@ export default function EventModal({
           <div className="mt-4 flex flex-wrap gap-1.5">
             {event.effects.map((e, i) => (
               <span
-                key={i}
+                key={`${e}-${i}`}
                 className="chip bg-slate-50 text-slate-600 ring-1 ring-inset ring-slate-200/70"
               >
                 {e}
@@ -186,7 +186,7 @@ export default function EventModal({
             </div>
             {event.options!.map((opt, i) => (
               <button
-                key={i}
+                key={`${event.id}-${i}`}
                 type="button"
                 onClick={() => onSelectOption?.(i)}
                 className={[

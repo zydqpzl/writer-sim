@@ -1,4 +1,6 @@
 import type { ActionType, Ending, GameState, LifePath, PathSnapshot, PlayerLocation } from '../types/game'
+import type { CareerProject, WriterProject } from '../types/career'
+import { isWriterProject } from '../types/career'
 import { ENDINGS } from './endings'
 
 const PATH_SCORES: LifePath[] = [
@@ -86,6 +88,16 @@ export function getPathSnapshot(state: GameState): PathSnapshot {
   }
 }
 
+/** 提取所有网文项目 */
+function getWriterProjects(projects: CareerProject[]): WriterProject[] {
+  return projects.filter(isWriterProject)
+}
+
+/** 计算所有网文项目累计字数 */
+function getTotalWordCount(projects: CareerProject[]): number {
+  return getWriterProjects(projects).reduce((sum, p) => sum + (p.wordCount ?? 0), 0)
+}
+
 /**
  * 判定当前是否触发结局。
  * 按 ENDINGS 数组优先级命中第一条满足条件的结局。
@@ -95,11 +107,72 @@ export function checkGameEnding(state: GameState): Ending | null {
   const { stats, location, subcultureReputation, examProgress, pathScores } = state
   const dominant = getDominantPath(pathScores)
 
+  const writerProjects = getWriterProjects(state.careerProjects)
+  const completedWriterProjects = writerProjects.filter((p) => p.phase === 'COMPLETED')
+  const totalWordCount = getTotalWordCount(state.careerProjects)
+  const avgCompletedQuality =
+    completedWriterProjects.length > 0
+      ? completedWriterProjects.reduce((sum, p) => sum + p.quality, 0) /
+        completedWriterProjects.length
+      : 0
+
   for (const ending of ENDINGS) {
     switch (ending.id) {
       case 'BURNOUT_FAIL':
         // 存款耗尽且压力达到上限：燃尽
         if (stats.savings < 0 && stats.stress >= 300) return ending
+        break
+      case 'EUNUCH_PALACE':
+        if (
+          state.writerCareerProfile.totalAbandonedBooks >= 5 &&
+          state.writerCareerProfile.totalCompletedBooks === 0
+        )
+          return ending
+        break
+      case 'FINANCIAL_FREEDOM':
+        // 主动封笔隐退：由 useGame 强制设置，这里不自动命中
+        break
+      case 'COMMERCIAL_TYCOON':
+        if (stats.savings >= 5_000_000 && dominant === 'BIG_CITY_CREATOR') return ending
+        break
+      case 'UNKNOWN_WORDSMITH':
+        if (
+          totalWordCount >= 1_000_000 &&
+          completedWriterProjects.length >= 1 &&
+          stats.fans < 100_000
+        )
+          return ending
+        break
+      case 'NICHE_LEGEND':
+        if (
+          completedWriterProjects.length >= 1 &&
+          avgCompletedQuality >= 80 &&
+          stats.fans < 200_000
+        )
+          return ending
+        break
+      case 'SERIOUS_LITERATURE_MASTER':
+        if (
+          state.authorProfile.skills.prose >= 90 &&
+          state.authorProfile.skills.structure >= 90 &&
+          completedWriterProjects.length >= 1
+        )
+          return ending
+        break
+      case 'CIVIL_SERVANT_WRITER':
+        if (examProgress >= 100 && writerProjects.length > 0) return ending
+        break
+      case 'PHOENIX_RESURRECTION':
+        if (
+          state.writerCareerProfile.totalAbandonedBooks >= 1 &&
+          writerProjects.some(
+            (p) =>
+              p.signed &&
+              p.penName !== '咸鱼作者' &&
+              (p.isViralSurge || p.blackHorseTriggered),
+          )
+        )
+          return ending
         break
       case 'CIVIL_SERVANT_SECRET_KOL':
         if (location === 'hometown' && examProgress >= 100) return ending

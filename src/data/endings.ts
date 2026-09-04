@@ -12,7 +12,71 @@ export const ENDINGS: Ending[] = [
     tag: 'fail',
     description:
       '存款见底，压力爆表，你终于在某天凌晨对着空白文档崩溃大哭。自由职业这场豪赌，你all in了所有筹码，却连底裤都没保住。',
-    hint: '在存款耗尽且压力崩溃时触发。',
+    hint: '存款耗尽且压力崩溃时触发。',
+  },
+  {
+    id: 'EUNUCH_PALACE',
+    title: '【结局：太监宫总管】',
+    tag: 'compromise',
+    description:
+      '你一生开了无数本书，却几乎没把任何一本写完。读者为你建立了“太监纪念馆”，你虽然不在江湖，但江湖到处都是你未完结的传说。',
+    hint: '累计太监 5 本以上且没有任何完本作品时触发。',
+  },
+  {
+    id: 'FINANCIAL_FREEDOM',
+    title: '【结局：财务自由 / 封笔隐退】',
+    tag: 'triumph',
+    description:
+      '你买下了江景创作者独栋，银行存款突破千万，最终在读者的不舍中潇洒封笔。网文江湖仍会流传你的名字，但你已不必再证明什么。',
+    hint: '购买顶级住房且存款超过 1000 万后主动选择封笔隐退。',
+  },
+  {
+    id: 'COMMERCIAL_TYCOON',
+    title: '【结局：商业巨鳄】',
+    tag: 'triumph',
+    description:
+      '老白读者骂你俗不可耐，但你的作品改编的动漫、影视、游戏遍地开花。你站在自家大平层的阳台上，笑看文坛浮沉。',
+    hint: '存款突破 500 万且主导路线为大城市创作者时触发。',
+  },
+  {
+    id: 'UNKNOWN_WORDSMITH',
+    title: '【结局：默默无闻的码字机】',
+    tag: 'compromise',
+    description:
+      '连载多年，累计字数突破百万，你从未冲上过畅销榜，但收益刚好够中产生活。你没有封神，也没有太监，是无数普通网文作者最真实的缩影。',
+    hint: '累计完本且总字数破百万，但粉丝未破 10 万时触发。',
+  },
+  {
+    id: 'NICHE_LEGEND',
+    title: '【结局：小众圈内传说】',
+    tag: 'triumph',
+    description:
+      '你的书从来没有冲上过畅销榜，但十几年来一直被读者反复品读。连高校中文系的教授，都在研究你书里的世界观构筑。',
+    hint: '完本作品平均质量 80+、粉丝未破 20 万时触发。',
+  },
+  {
+    id: 'SERIOUS_LITERATURE_MASTER',
+    title: '【结局：严肃文学大师】',
+    tag: 'triumph',
+    description:
+      '你彻底脱去了“网文写手”的帽子，用沉淀多年的文笔与结构力写出严肃文学作品，走进了高耸的文学殿堂。',
+    hint: '文笔与结构力均达到 90+ 且有完本作品时触发。',
+  },
+  {
+    id: 'CIVIL_SERVANT_WRITER',
+    title: '【结局：体制内摸鱼大牛】',
+    tag: 'compromise',
+    description:
+      '茶杯里泡着枸杞，办公室里偷偷码字。网文对你来说不再是生存的稻草，而是生活最惬意的调味剂。',
+    hint: '考公/求职进度达到 100 且仍有作品在创作时触发。',
+  },
+  {
+    id: 'PHOENIX_RESURRECTION',
+    title: '【结局：秽土涅槃】',
+    tag: 'triumph',
+    description:
+      '没人知道当年那个被全网痛骂的烂尾王，就是如今名震天下的白金大神。你用新的名字，洗刷了旧日的屈辱。',
+    hint: '曾经太监过作品，后续又以新笔名一书封神时触发。',
   },
   {
     id: 'CIVIL_SERVANT_SECRET_KOL',

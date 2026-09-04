@@ -126,6 +126,8 @@ export interface GameState {
   workedToday: boolean
   /** 连续靠兼职生存且主业进度为 0 的天数 */
   consecutivePartTimeDays: number
+  /** 职业生涯中累计兼职天数（用于成就判定） */
+  totalPartTimeDays: number
   /** 是否已触发"现实的铁拳" */
   realityPunchTriggered: boolean
   /** 今日刷新出的限时奇遇事件链 id（null 表示今日无奇遇） */
@@ -156,6 +158,16 @@ export interface GameState {
   authorProfile: import('./career').AuthorProfile
   /** 玩家网络作家生涯档案（跨作品持久） */
   writerCareerProfile: import('./career').WriterCareerProfile
+  /** 当前住房等级 id */
+  housingId: string
+  /** 已拥有的装备 id */
+  ownedEquipmentIds: string[]
+  /** 当前生效的保险 id */
+  activeInsuranceIds: string[]
+  /** 已解锁的江湖称号 id */
+  unlockedAuthorTitleIds: string[]
+  /** 本局新解锁的成就 id（用于结算提示与跨局持久化） */
+  newUnlockedAchievementIds: string[]
 }
 
 /** 日志条目类型 */
@@ -172,6 +184,8 @@ export interface LogEntry {
 
 /** 行动定义（用于渲染行动卡片） */
 export interface ActionDef {
+  /** 行动唯一 id，用于生活方式/公关等特殊行动的二次分发 */
+  id?: string
   type: ActionType
   label: string
   desc: string

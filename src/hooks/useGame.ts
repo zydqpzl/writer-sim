@@ -32,13 +32,11 @@ import {
 import { cloneTrait } from '../data/traits'
 import {
   ACTIONS,
-  CITY_RENT,
   CREATION_VIRAL_RATE,
   ENCOUNTER_CHAIN_IDS,
   ENCOUNTER_SPAWN_RATE,
   HEALTH_THRESHOLDS,
   HOMETOWN_DAILY_STRESS,
-  HOMETOWN_RENT,
   NEXT_SLOT,
   REALITY_PUNCH_THRESHOLD,
   STRESS_MAX,
@@ -47,6 +45,14 @@ import {
   VIRAL_BONUS_SAVINGS,
   getEmergencyAction,
 } from '../data/gameData'
+import { AUTHOR_TITLES, AUTHOR_TITLE_BY_ID } from '../data/authorTitles'
+import { ACHIEVEMENT_BY_ID, checkNewAchievements } from '../data/achievements'
+import {
+  HOUSING_BY_ID,
+  INSURANCE_ITEMS,
+  LIFESTYLE_ITEM_BY_ID,
+  getDailyRent,
+} from '../data/lifestyleItems'
 import {
   STARTING_IDENTITIES,
   buildInitialState,
@@ -145,6 +151,115 @@ export function grantTrait(
     traits: [...filtered, tpl],
     trait: tpl,
   }
+}
+
+/** 查找当前第一个进行中的网文项目（不依赖 hook） */
+function findActiveWriterProject(state: GameState): WriterProject | null {
+  return (
+    (state.careerProjects.find(
+      (p): p is WriterProject =>
+        isWriterProject(p) && p.stage !== 'COMPLETED' && p.stage !== 'ABANDONED',
+    ) as WriterProject | undefined) ?? null
+  )
+}
+
+/** 清除某一类别的生活方式特质（用于住房/保险替换） */
+function clearTraitCategory(
+  activeTraits: StatusTrait[],
+  prefix: string,
+): StatusTrait[] {
+  return activeTraits.filter((t) => !t.id.startsWith(prefix))
+}
+
+/**
+ * 保险月度自动续费：已过期则尝试扣款续保，余额不足则断保。
+ * 返回更新后的 activeTraits、stats、activeInsuranceIds 与日志文本。
+ */
+function renewInsurance(
+  state: GameState,
+  traits: StatusTrait[],
+  stats: PlayerStats,
+): {
+  nextTraits: StatusTrait[]
+  nextStats: PlayerStats
+  nextActiveInsuranceIds: string[]
+  logs: string[]
+} {
+  const logs: string[] = []
+  let nextTraits = traits
+  let nextStats = stats
+  const nextActiveInsuranceIds: string[] = []
+
+  for (const insuranceId of state.activeInsuranceIds) {
+    const item = INSURANCE_ITEMS.find((i) => i.id === insuranceId)
+    if (!item) continue
+
+    const traitStillActive = nextTraits.some((t) => t.id === item.traitId)
+    if (traitStillActive) {
+      nextActiveInsuranceIds.push(insuranceId)
+      continue
+    }
+
+    // 保险特质已过期，尝试自动续费
+    if (nextStats.savings >= (item.monthlyCost ?? 0)) {
+      nextStats = { ...nextStats, savings: nextStats.savings - (item.monthlyCost ?? 0) }
+      const granted = grantTrait(nextTraits, item.traitId!)
+      nextTraits = granted.traits
+      nextActiveInsuranceIds.push(insuranceId)
+      logs.push(
+        `【${item.name}】自动续费成功，扣除 ${(item.monthlyCost ?? 0).toLocaleString('zh-CN')} 元。`,
+      )
+    } else {
+      logs.push(
+        `【${item.name}】因存款不足已断保，请及时补缴。`,
+      )
+    }
+  }
+
+  return { nextTraits, nextStats, nextActiveInsuranceIds, logs }
+}
+
+/** 检查是否有新解锁的江湖称号，并返回新称号 id 与更新后的特质列表 */
+function checkAuthorTitleUnlocks(
+  state: GameState,
+  activeProject?: WriterProject | null,
+): { newTitleIds: string[]; nextTraits: StatusTrait[] } {
+  const newTitleIds: string[] = []
+  let nextTraits = state.activeTraits
+  for (const title of AUTHOR_TITLES) {
+    if (state.unlockedAuthorTitleIds.includes(title.id)) continue
+    const cond = title.unlockCondition
+    let unlocked = false
+    switch (cond.type) {
+      case 'consecutive_daily_updates':
+        unlocked = (activeProject?.consecutiveDailyUpdates ?? 0) >= cond.threshold
+        break
+      case 'total_abandoned_books':
+        unlocked = state.writerCareerProfile.totalAbandonedBooks >= cond.threshold
+        break
+      case 'total_completed_books':
+        unlocked = state.writerCareerProfile.totalCompletedBooks >= cond.threshold
+        break
+      case 'word_count':
+        unlocked = (activeProject?.wordCount ?? 0) >= cond.threshold
+        break
+      case 'style_trait':
+        unlocked =
+          !!cond.styleTraitId &&
+          (activeProject?.activeStyleTraits.includes(cond.styleTraitId) ?? false)
+        break
+      case 'peak_rank':
+      case 'manual':
+      default:
+        unlocked = false
+    }
+    if (unlocked) {
+      newTitleIds.push(title.id)
+      const granted = grantTrait(nextTraits, title.traitId)
+      nextTraits = granted.traits
+    }
+  }
+  return { newTitleIds, nextTraits }
 }
 
 /**
@@ -266,24 +381,36 @@ export interface StartSetup {
   keptCardIds?: string[]
 }
 
-function computeStartState(setup?: StartSetup): GameState {
+function computeStartState(
+  setup: StartSetup | undefined,
+  profile: LegacyProfile,
+): GameState {
   const identity = setup?.identity ?? STARTING_IDENTITIES[0]
   const keptCards = resolveKeptCards(setup?.keptCardIds ?? [])
-  const state = buildInitialState(identity, keptCards)
+  const state = buildInitialState(identity, keptCards, profile)
   // 根据开局身份映射默认履历标签
   const backgroundIds = STARTING_IDENTITY_BACKGROUNDS[identity.id] ?? []
+  // 开局默认入住城中村，获得对应居住 Buff
+  const { traits: housingTraits } = grantTrait(
+    state.activeTraits,
+    'trait_housing_shanty',
+  )
   return {
     ...state,
     authorProfile: createAuthorProfile(
       state.authorProfile.penName,
       backgroundIds,
     ),
+    activeTraits: housingTraits,
   }
 }
 
 export function useGame(initialSetup?: StartSetup) {
   const [startSetup, setStartSetup] = useState<StartSetup | undefined>(initialSetup)
-  const [state, setState] = useState<GameState>(() => computeStartState(startSetup))
+  const [legacyProfile, setLegacyProfile] = useState<LegacyProfile>(() => loadLegacyProfile())
+  const [state, setState] = useState<GameState>(() =>
+    computeStartState(startSetup, legacyProfile),
+  )
   const [logs, setLogs] = useState<LogEntry[]>([
     {
       id: logIdSeed++,
@@ -297,11 +424,6 @@ export function useGame(initialSetup?: StartSetup) {
 
   // 结局运行态
   const [ending, setEnding] = useState<Ending | null>(null)
-
-  // Roguelite 遗产档案（跨局持久化）
-  const [legacyProfile, setLegacyProfile] = useState<LegacyProfile>(() =>
-    loadLegacyProfile(),
-  )
 
   // 事件链运行态
   const [currentChain, setCurrentChain] = useState<EventChain | null>(null)
@@ -352,12 +474,13 @@ export function useGame(initialSetup?: StartSetup) {
         ending,
         carriedCardId,
         state.unlockedMemes,
+        state.newUnlockedAchievementIds,
       )
       saveLegacyProfile(next)
       setLegacyProfile(next)
       setEnding(null)
     },
-    [ending, legacyProfile, state.unlockedMemes],
+    [ending, legacyProfile, state.unlockedMemes, state.newUnlockedAchievementIds],
   )
 
   const log = useCallback(
@@ -606,10 +729,26 @@ export function useGame(initialSetup?: StartSetup) {
     )
   }
 
-  /** 选择普通行动（社媒/父母/休息）。创作走 publishWork，兼职走专用入口。 */
+  /** 选择普通行动（社媒/父母/休息/消费）。创作走 publishWork，兼职走专用入口。 */
   const chooseAction = useCallback(
     (action: ActionDef) => {
       if (state.actedThisSlot) return
+
+      // 主动封笔隐退：直接触发财务自由结局
+      if (action.id === 'retire_financial_freedom') {
+        const ending = ENDINGS.find((e) => e.id === 'FINANCIAL_FREEDOM')
+        if (ending) {
+          log(
+            state.day,
+            state.slot,
+            'celebrate',
+            `你选择${action.label}，结束这一局网文生涯。`,
+          )
+          setEnding(ending)
+        }
+        return
+      }
+
       if (
         action.type === 'work' ||
         action.type === 'parttime' ||
@@ -629,17 +768,142 @@ export function useGame(initialSetup?: StartSetup) {
 
       const maxE = computeMaxEnergy(state)
       const maxS = computeMaxStress(state)
-      const newStats = applyEffects(state.stats, action.effects, maxE, maxS)
+      const extraLogs: string[] = []
+
+      // 生活方式/公关/装备等二次分发：先校验是否可购买/升级，避免扣款后才发现重复
+      if (action.id) {
+        const housing = HOUSING_BY_ID[action.id]
+        const item = LIFESTYLE_ITEM_BY_ID[action.id]
+        if (housing) {
+          if (state.housingId === housing.id) {
+            log(
+              state.day,
+              state.slot,
+              'loss',
+              `你已经住在【${housing.name}】，无需再次租住。`,
+            )
+            return
+          }
+        } else if (item) {
+          if (item.category === 'equipment' && state.ownedEquipmentIds.includes(item.id)) {
+            log(
+              state.day,
+              state.slot,
+              'loss',
+              `你已经拥有【${item.name}】，无需重复购买。`,
+            )
+            return
+          }
+          if (item.category === 'insurance' && state.activeInsuranceIds.includes(item.id)) {
+            log(
+              state.day,
+              state.slot,
+              'loss',
+              `【${item.name}】已在生效中。`,
+            )
+            return
+          }
+        }
+      }
+
+      let newStats = applyEffects(state.stats, action.effects, maxE, maxS)
+      let nextState: GameState = { ...state, stats: newStats }
+
+      // 生活方式/公关/装备等二次分发
+      if (action.id) {
+        const housing = HOUSING_BY_ID[action.id]
+        const item = LIFESTYLE_ITEM_BY_ID[action.id]
+        if (housing) {
+          const cleaned = clearTraitCategory(
+            state.activeTraits,
+            'trait_housing_',
+          )
+          const { traits } = grantTrait(cleaned, housing.traitId!)
+          nextState = {
+            ...nextState,
+            housingId: housing.id,
+            activeTraits: traits,
+          }
+          extraLogs.push(`迁入【${housing.name}】，月租 ${housing.monthlyCost} 元`)
+        } else if (item) {
+          let nextTraits = state.activeTraits
+          let nextOwned = state.ownedEquipmentIds
+          let nextInsurances = state.activeInsuranceIds
+
+          if (item.traitId) {
+            if (item.replacesCategory) {
+              const prefix =
+                item.category === 'insurance'
+                  ? 'trait_insurance_'
+                  : 'trait_housing_'
+              nextTraits = clearTraitCategory(nextTraits, prefix)
+            }
+            const granted = grantTrait(nextTraits, item.traitId)
+            nextTraits = granted.traits
+          }
+
+          if (item.category === 'equipment') {
+            nextOwned = [...nextOwned, item.id]
+          } else if (item.category === 'insurance') {
+            nextInsurances = [...nextInsurances, item.id]
+          } else if (item.category === 'pr') {
+            const project = findActiveWriterProject(state)
+            if (project) {
+              let wp = { ...project }
+              if (item.id === 'pr_silver_alliance') {
+                wp.metrics = {
+                  ...wp.metrics,
+                  currentHype: clampTo(wp.metrics.currentHype + 25, 0, 100),
+                }
+                wp.readerMood = clampTo(wp.readerMood + 5, -100, 100)
+                extraLogs.push('自费白银盟：作品热度暴涨，读者情绪回暖')
+              } else if (item.id === 'pr_gold_alliance') {
+                wp.metrics = {
+                  ...wp.metrics,
+                  currentHype: clampTo(wp.metrics.currentHype + 60, 0, 100),
+                }
+                wp.readerMood = clampTo(wp.readerMood + 10, -100, 100)
+                extraLogs.push('自费黄金盟：全站瞩目，热度拉满')
+              } else if (item.id === 'pr_crisis_control') {
+                wp.stats = {
+                  ...wp.stats,
+                  bugOrControversy: Math.max(
+                    0,
+                    wp.stats.bugOrControversy - 20,
+                  ),
+                }
+                wp.readerMood = clampTo(wp.readerMood + 10, -100, 100)
+                extraLogs.push('危机公关：负面舆论被压下，读者情绪回升')
+              }
+              nextState.careerProjects = state.careerProjects.map((p) =>
+                p.id === wp.id ? wp : p,
+              )
+            }
+          }
+
+          nextState = {
+            ...nextState,
+            activeTraits: nextTraits,
+            ownedEquipmentIds: nextOwned,
+            activeInsuranceIds: nextInsurances,
+          }
+          extraLogs.push(`获得生活增益：${item.name}`)
+        }
+      }
+
       const newPathScores = updatePathScores(
         state.pathScores,
         action.type,
         state.location,
       )
-      log(state.day, state.slot, 'info', `${action.label}：${effectsToParts(action.effects)}。`)
+      const baseParts = effectsToParts(action.effects)
+      const logText = [baseParts, ...extraLogs]
+        .filter((s) => s.length > 0)
+        .join('，')
+      log(state.day, state.slot, 'info', `${action.label}：${logText}。`)
 
       setState({
-        ...state,
-        stats: newStats,
+        ...nextState,
         pathScores: newPathScores,
         actedThisSlot: true,
       })
@@ -828,6 +1092,28 @@ export function useGame(initialSetup?: StartSetup) {
         log(state.day, state.slot, 'info', text),
       )
 
+      // 检查是否有新解锁的江湖称号
+      const projectedState: GameState = {
+        ...state,
+        stats: newStats,
+        careerProjects: newProjects,
+      }
+      const { newTitleIds, nextTraits } = checkAuthorTitleUnlocks(
+        projectedState,
+        result.project,
+      )
+      if (newTitleIds.length > 0) {
+        newTitleIds.forEach((id) => {
+          const title = AUTHOR_TITLE_BY_ID[id]
+          log(
+            state.day,
+            state.slot,
+            'celebrate',
+            `江湖称号解锁：【${title.name}】！${title.description}`,
+          )
+        })
+      }
+
       setState({
         ...state,
         stats: newStats,
@@ -836,14 +1122,11 @@ export function useGame(initialSetup?: StartSetup) {
         actedThisSlot: true,
         workedToday: true,
         consecutivePartTimeDays: 0,
+        unlockedAuthorTitleIds: [...state.unlockedAuthorTitleIds, ...newTitleIds],
+        activeTraits: nextTraits,
       })
 
       // 写作动作后检测网文圈事件
-      const projectedState: GameState = {
-        ...state,
-        stats: newStats,
-        careerProjects: newProjects,
-      }
       const triggeredChainId = checkWriterEventTriggers(
         projectedState,
         state.day,
@@ -1157,6 +1440,7 @@ export function useGame(initialSetup?: StartSetup) {
       actedThisSlot: true,
       partTimeLock: true,
       consecutivePartTimeDays: consecutive,
+      totalPartTimeDays: state.totalPartTimeDays + 1,
       realityPunchTriggered,
     })
   }, [state, log, emitEvent])
@@ -1463,6 +1747,7 @@ export function useGame(initialSetup?: StartSetup) {
           actedThisSlot: true,
           partTimeLock: true,
           consecutivePartTimeDays: consecutive,
+          totalPartTimeDays: state.totalPartTimeDays + 1,
           realityPunchTriggered,
         })
         setCurrentChain(null)
@@ -1501,8 +1786,9 @@ export function useGame(initialSetup?: StartSetup) {
         return
       }
 
-      // 地点相关每日开销
-      const dailyRent = state.location === 'hometown' ? HOMETOWN_RENT : CITY_RENT
+      // 地点相关每日开销：住房按当前 housingId 月租折算，回老家免房租但有家庭压力
+      const dailyRent =
+        state.location === 'hometown' ? 0 : getDailyRent(state.housingId)
       const dailyStress =
         state.location === 'hometown' ? HOMETOWN_DAILY_STRESS : 0
       const locationLabel = state.location === 'hometown' ? '老家' : '大城市'
@@ -1543,6 +1829,16 @@ export function useGame(initialSetup?: StartSetup) {
           'system',
           `状态特质【${t.name}】已过期失效。`,
         )
+      }
+
+      // 保险月度自动续费：在每日开销与职业收益前结算
+      const insuranceRenewal = renewInsurance(
+        state,
+        traitResult.traits,
+        traitResult.stats,
+      )
+      for (const insuranceLog of insuranceRenewal.logs) {
+        log(newDay, 'morning', 'system', insuranceLog)
       }
 
       // CareerEngine 每日发酵结算
@@ -1724,6 +2020,29 @@ export function useGame(initialSetup?: StartSetup) {
         platformCareer: nextPlatformCareer,
       }
 
+      // 每日检查江湖称号解锁
+      const titleCheckState: GameState = {
+        ...state,
+        careerProjects: careerProjectsTicked,
+        writerCareerProfile: nextWriterCareerProfile,
+        activeTraits: insuranceRenewal.nextTraits,
+      }
+      const { newTitleIds, nextTraits: titleTraits } = checkAuthorTitleUnlocks(
+        titleCheckState,
+        findActiveWriterProject(titleCheckState),
+      )
+      if (newTitleIds.length > 0) {
+        newTitleIds.forEach((id) => {
+          const title = AUTHOR_TITLE_BY_ID[id]
+          log(
+            newDay,
+            'morning',
+            'celebrate',
+            `江湖称号解锁：【${title.name}】！${title.description}`,
+          )
+        })
+      }
+
       // 限时奇遇刷新：40% 概率刷出一条今日有效的奇遇
       // 回老家后加入专属返乡链，城市奇遇在老家也可用（手机接单/亲戚串门）
       const encounterCandidates =
@@ -1749,20 +2068,43 @@ export function useGame(initialSetup?: StartSetup) {
         )
       }
 
-      // 合成新 stats：先 trait 结算，再扣生活费 + 地点日常压力 + CareerEngine 收益
+      // 合成新 stats：先 trait 与保险结算，再扣生活费 + 地点日常压力 + CareerEngine 收益
       const finalStats: PlayerStats = {
-        ...traitResult.stats,
+        ...insuranceRenewal.nextStats,
         savings:
-          traitResult.stats.savings - dailyRent + careerSavingsDelta,
-        fans: traitResult.stats.fans + careerFansDelta,
+          insuranceRenewal.nextStats.savings - dailyRent + careerSavingsDelta,
+        fans: insuranceRenewal.nextStats.fans + careerFansDelta,
         stress: clampStress(
-          traitResult.stats.stress + dailyStress + careerStressDelta,
+          insuranceRenewal.nextStats.stress + dailyStress + careerStressDelta,
           maxS,
         ),
       }
 
       // 特质结算可能让压力到顶，触发崩溃检测（用结算后的 maxS）
       checkStressBreakdown(finalStats.stress, newDay, 'morning', maxS)
+
+      // 成就解锁判定（每日结算时扫描）
+      const achievementCheckState: GameState = {
+        ...titleCheckState,
+        stats: finalStats,
+      }
+      const newAchievementIds = checkNewAchievements(
+        achievementCheckState,
+        new Set(legacyProfile.unlockedAchievementIds),
+      )
+      if (newAchievementIds.length > 0) {
+        for (const achId of newAchievementIds) {
+          const ach = ACHIEVEMENT_BY_ID[achId]
+          if (ach) {
+            log(
+              newDay,
+              'morning',
+              'celebrate',
+              `🏆 成就解锁：【${ach.title}】${ach.description}`,
+            )
+          }
+        }
+      }
 
       // 中途结局判定：燃尽（存款<0 且 压力满）
       const midEnding = checkGameEnding({
@@ -1781,10 +2123,19 @@ export function useGame(initialSetup?: StartSetup) {
           workedToday: false,
           availableEncounter: newEncounter,
           stats: finalStats,
-          activeTraits: traitResult.traits,
+          activeTraits: titleTraits,
           careerProjects: careerProjectsTicked,
           authorRank: newAuthorRank,
           writerCareerProfile: nextWriterCareerProfile,
+          activeInsuranceIds: insuranceRenewal.nextActiveInsuranceIds,
+          unlockedAuthorTitleIds: [
+            ...state.unlockedAuthorTitleIds,
+            ...newTitleIds,
+          ],
+          newUnlockedAchievementIds: [
+            ...state.newUnlockedAchievementIds,
+            ...newAchievementIds,
+          ],
           platformEcosystem: {
             npcs: platformResult.updatedNpcs,
             leaderboards: platformResult.updatedLeaderboards,
@@ -1814,10 +2165,19 @@ export function useGame(initialSetup?: StartSetup) {
         workedToday: false,
         availableEncounter: newEncounter,
         stats: finalStats,
-        activeTraits: traitResult.traits,
+        activeTraits: titleTraits,
         careerProjects: careerProjectsTicked,
         authorRank: newAuthorRank,
         writerCareerProfile: nextWriterCareerProfile,
+        activeInsuranceIds: insuranceRenewal.nextActiveInsuranceIds,
+        unlockedAuthorTitleIds: [
+          ...state.unlockedAuthorTitleIds,
+          ...newTitleIds,
+        ],
+        newUnlockedAchievementIds: [
+          ...state.newUnlockedAchievementIds,
+          ...newAchievementIds,
+        ],
         platformEcosystem: {
           npcs: platformResult.updatedNpcs,
           leaderboards: platformResult.updatedLeaderboards,

@@ -93,7 +93,7 @@ export default function EventChainModal({
               : []
             return (
               <button
-                key={i}
+                key={`${step.stepId}-${i}`}
                 type="button"
                 onClick={() => onSelect(opt)}
                 className="group flex w-full items-start gap-3 rounded-xl border border-slate-200 bg-white p-3.5 text-left transition-all hover:-translate-y-0.5 hover:border-violet-300 hover:bg-violet-50/40"

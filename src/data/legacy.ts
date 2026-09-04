@@ -5,6 +5,8 @@ import { CARD_POOL } from './eventChains'
 import { INITIAL_STATE } from './gameData'
 import type { Ending } from '../types/game'
 import { generateInitialNpcs } from '../engine/platformEngine'
+import { aggregateMetaBonuses } from './achievements'
+import type { AuthorProfile } from '../types/career'
 
 /** 遗产档案（跨局持久化） */
 export interface LegacyProfile {
@@ -18,6 +20,8 @@ export interface LegacyProfile {
   keptCardIds: string[]
   /** 已解锁的作者梗/名场面（跨局持久化） */
   unlockedMemes: AuthorMeme[]
+  /** 已解锁的成就 id（跨局持久化） */
+  unlockedAchievementIds: string[]
 }
 
 /** 开局身份定义 */
@@ -107,6 +111,7 @@ export function loadLegacyProfile(): LegacyProfile {
         unlockedIdentityIds: parsed.unlockedIdentityIds ?? ['default'],
         keptCardIds: parsed.keptCardIds ?? [],
         unlockedMemes: parsed.unlockedMemes ?? [],
+        unlockedAchievementIds: parsed.unlockedAchievementIds ?? [],
       }
     }
   } catch {
@@ -118,6 +123,7 @@ export function loadLegacyProfile(): LegacyProfile {
     unlockedIdentityIds: ['default'],
     keptCardIds: [],
     unlockedMemes: [],
+    unlockedAchievementIds: [],
   }
 }
 
@@ -129,10 +135,11 @@ export function saveLegacyProfile(profile: LegacyProfile): void {
   }
 }
 
-/** 将身份补丁和携带卡牌合并进初始状态 */
+/** 将身份补丁、携带卡牌与成就元加成合并进初始状态 */
 export function buildInitialState(
   identity: StartingIdentity,
   keptCards: InspirationCard[],
+  profile?: LegacyProfile,
 ): GameState {
   const base: GameState = JSON.parse(JSON.stringify(INITIAL_STATE))
   const patched: GameState = { ...base }
@@ -160,6 +167,46 @@ export function buildInitialState(
     }))
   }
 
+  // 应用成就元加成
+  if (profile && profile.unlockedAchievementIds.length > 0) {
+    const bonus = aggregateMetaBonuses(profile.unlockedAchievementIds)
+    patched.stats.savings += bonus.startingSavingsDelta
+    patched.stats.energy += bonus.startingEnergyMaxDelta
+    patched.stats.stress += bonus.startingStressMaxDelta
+    patched.stats.familyApproval = Math.min(
+      100,
+      patched.stats.familyApproval + (bonus.startingFamilyApprovalDelta ?? 0),
+    )
+
+    if (Object.keys(bonus.startingSkillDelta).length > 0) {
+      patched.authorProfile = {
+        ...patched.authorProfile,
+        skills: {
+          ...patched.authorProfile.skills,
+          ...Object.fromEntries(
+            Object.entries(bonus.startingSkillDelta).map(([k, v]) => [
+              k,
+              Math.min(
+                100,
+                (patched.authorProfile.skills as Record<string, number>)[k] + v,
+              ),
+            ]),
+          ),
+        } as AuthorProfile['skills'],
+      }
+    }
+
+    // 成就奖励的额外灵感卡牌（不占用遗产携带位，可直接获得）
+    if (bonus.startingCards && bonus.startingCards.length > 0) {
+      const achievementCards = bonus.startingCards
+        .map((id) => CARD_POOL[id])
+        .filter((c): c is InspirationCard => !!c)
+      if (achievementCards.length > 0) {
+        patched.inventory = [...patched.inventory, ...achievementCards.map((c) => ({ ...c }))]
+      }
+    }
+  }
+
   // 初始化网文江湖：每个平台生成 4 名 NPC 同行
   patched.platformEcosystem = {
     ...patched.platformEcosystem,
@@ -182,6 +229,7 @@ export function settleLegacy(
   ending: Ending,
   carriedCardId: string | null,
   currentMemes: AuthorMeme[] = [],
+  newAchievementIds: string[] = [],
 ): LegacyProfile {
   const points = legacyPointsFor(ending)
   const unlockedEndingIds = profile.unlockedEndingIds.includes(ending.id)
@@ -211,11 +259,17 @@ export function settleLegacy(
     }
   }
 
+  // 合并本局新解锁成就
+  const unlockedAchievementIds = Array.from(
+    new Set([...profile.unlockedAchievementIds, ...newAchievementIds]),
+  )
+
   return {
     totalLegacyPoints: newTotal,
     unlockedEndingIds,
     unlockedIdentityIds,
     keptCardIds: carriedCardId ? [carriedCardId] : [],
     unlockedMemes: Array.from(memeMap.values()),
+    unlockedAchievementIds,
   }
 }

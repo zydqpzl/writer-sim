@@ -4,6 +4,16 @@ import {
   createAuthorProfile,
   createEmptyWriterCareerProfile,
 } from '../engine/careerEngine'
+import {
+  EQUIPMENT_ITEMS,
+  getHousingMoveInCost,
+  HOUSING_TIERS,
+  INSURANCE_ITEMS,
+  LIFESTYLE_ITEMS,
+  PR_SERVICES,
+  WELLNESS_ITEMS,
+} from './lifestyleItems'
+import { cloneTrait } from './traits'
 
 /** 总天数 */
 export const TOTAL_DAYS = 60
@@ -93,10 +103,11 @@ export const INITIAL_STATE: GameState = {
   partTimeLock: false,
   workedToday: false,
   consecutivePartTimeDays: 0,
+  totalPartTimeDays: 0,
   realityPunchTriggered: false,
   availableEncounter: null,
   inventory: [],
-  activeTraits: [],
+  activeTraits: [cloneTrait('trait_housing_shanty')!],
   pathScores: {
     BIG_CITY_CREATOR: 0,
     HOMETOWN_KOL: 0,
@@ -120,6 +131,11 @@ export const INITIAL_STATE: GameState = {
   marketTrend: generateMarketTrend(1),
   authorProfile: createAuthorProfile('咸鱼作者'),
   writerCareerProfile: createEmptyWriterCareerProfile(),
+  housingId: 'housing_shanty',
+  ownedEquipmentIds: [],
+  activeInsuranceIds: [],
+  unlockedAuthorTitleIds: [],
+  newUnlockedAchievementIds: [],
   stats: {
     savings: 8000,
     health: 80,
@@ -253,19 +269,85 @@ export const ACTIONS: ActionDef[] = [
     },
     requirement: { minSavings: 500 },
   },
-  {
+  // 居住环境升级：押一付一后迁入，每日房租按新月租计算
+  ...HOUSING_TIERS.slice(1).map<ActionDef>((h) => ({
+    id: h.id,
     type: 'consume',
-    label: '升级写作设备',
-    desc: '花 2500 元换把人体工学椅+机械键盘，长期伏案也能多撑一会儿。',
+    label: `升级住房：${h.name}`,
+    desc: `${h.description}（押一付一 ${getHousingMoveInCost(h).toLocaleString('zh-CN')} 元，月租 ${h.monthlyCost.toLocaleString('zh-CN')} 元）`,
+    icon: '🏠',
+    accent: 'indigo',
+    effects: {
+      savings: -getHousingMoveInCost(h),
+      stress: h.id === 'housing_villa' ? -10 : -3,
+    },
+    requirement: { minSavings: getHousingMoveInCost(h) },
+  })),
+  // 生产力装备：一次性购买，获得长期 Buff 特质
+  ...EQUIPMENT_ITEMS.map<ActionDef>((item) => ({
+    id: item.id,
+    type: 'consume',
+    label: `购买${item.name}`,
+    desc: item.description,
     icon: '⌨️',
     accent: 'sky',
-    effects: {
-      savings: -2500,
-      health: 10,
-      energy: 15,
-      stress: -3,
-    },
-    requirement: { minSavings: 2500 },
+    effects: { savings: -item.cost },
+    requirement: { minSavings: item.cost },
+  })),
+  // 商业推广与公关：作用于当前作品
+  ...PR_SERVICES.map<ActionDef>((item) => ({
+    id: item.id,
+    type: 'consume',
+    label: item.name,
+    desc: item.description,
+    icon: '📢',
+    accent: 'fuchsia',
+    effects: { savings: -item.cost },
+    requirement: { minSavings: item.cost, needsActiveWriterProject: true },
+  })),
+  // 培训进修：一次性投入，长期提升上限
+  ...LIFESTYLE_ITEMS.filter((item) => item.category === 'training').map<ActionDef>((item) => ({
+    id: item.id,
+    type: 'consume',
+    label: `报名${item.name}`,
+    desc: item.description,
+    icon: '🎓',
+    accent: 'violet',
+    effects: { savings: -item.cost },
+    requirement: { minSavings: item.cost },
+  })),
+  // 保险：月缴，获得抗风险 Buff 特质
+  ...INSURANCE_ITEMS.map<ActionDef>((item) => ({
+    id: item.id,
+    type: 'consume',
+    label: `购买${item.name}`,
+    desc: `${item.description}（月缴 ${(item.monthlyCost ?? 0).toLocaleString('zh-CN')} 元）`,
+    icon: '🛡️',
+    accent: 'teal',
+    effects: { savings: -(item.monthlyCost ?? 0) },
+    requirement: { minSavings: item.monthlyCost ?? 0 },
+  })),
+  // 身心健康：一次性恢复状态
+  ...WELLNESS_ITEMS.map<ActionDef>((item) => ({
+    id: item.id,
+    type: 'consume',
+    label: item.name,
+    desc: item.description,
+    icon: '💆',
+    accent: 'emerald',
+    effects: { savings: -item.cost, health: 15, stress: -8 },
+    requirement: { minSavings: item.cost },
+  })),
+  // 功成名就：主动封笔隐退（需顶级住房 + 千万存款）
+  {
+    id: 'retire_financial_freedom',
+    type: 'consume',
+    label: '封笔隐退',
+    desc: '你已财务自由，选择在掌声与不舍中优雅退休，给自己的网文生涯画上句号。',
+    icon: '🏆',
+    accent: 'amber',
+    effects: {},
+    requirement: { minSavings: 10_000_000 },
   },
 ]
 

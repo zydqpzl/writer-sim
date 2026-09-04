@@ -191,7 +191,7 @@ export default function DayActionPanel({
           const disabled = actedThisSlot || isWorkLocked
           return (
             <button
-              key={action.type}
+              key={action.id ?? `${action.type}-${action.label}`}
               type="button"
               disabled={disabled}
               onClick={() =>

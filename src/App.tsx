@@ -9,6 +9,7 @@ import EventModal from './components/EventModal'
 import GameLog from './components/GameLog'
 import LegacySetupModal from './components/LegacySetupModal'
 import PlatformEcosystemPanel from './components/PlatformEcosystemPanel'
+import AchievementModal from './components/AchievementModal'
 import PlayerStatusPanel from './components/PlayerStatusPanel'
 import WriterProjectPanel from './components/WriterProjectPanel'
 import { legacyPointsFor } from './data/legacy'
@@ -72,18 +73,27 @@ export default function App() {
   const [creationOpen, setCreationOpen] = useState(false)
   const [writerWorkOpen, setWriterWorkOpen] = useState(false)
   const [debugOpen, setDebugOpen] = useState(false)
+  const [achievementOpen, setAchievementOpen] = useState(false)
   // 若本地已保存携带卡牌且已有回响，说明上一局已结算但尚未开始新局，优先展示 setup
   const [setupOpen, setSetupOpen] = useState(
     () => legacyProfile.keptCardIds.length > 0 && legacyProfile.totalLegacyPoints > 0,
   )
 
-  // 按当前地点与存款条件过滤主行动
+  // 按当前地点、存款条件与已拥有状态过滤主行动
   const availableActions = ACTIONS.filter((a) => {
     const locationOk = !a.location || a.location === state.location
     const savingsOk = !a.requirement?.minSavings || state.stats.savings >= a.requirement.minSavings
     const projectOk =
       !a.requirement?.needsActiveWriterProject || !!activeProject
-    return locationOk && savingsOk && projectOk
+    // 已拥有的住房、装备、保险不再重复展示（PR 买量可重复）
+    const alreadyOwned =
+      !!a.id &&
+      (a.id === state.housingId ||
+        state.ownedEquipmentIds.includes(a.id) ||
+        state.activeInsuranceIds.includes(a.id))
+    // 封笔隐退仅在拥有顶级住房时出现
+    const retireHidden = a.id === 'retire_financial_freedom' && state.housingId !== 'housing_villa'
+    return locationOk && savingsOk && projectOk && !alreadyOwned && !retireHidden
   })
   const emergencyAction = getEmergencyAction(state.location)
 
@@ -109,6 +119,13 @@ export default function App() {
             <span className="chip bg-brand-50 text-brand-600">60 天试用</span>
             <span className="chip bg-orange-50 text-orange-600">保命兼职</span>
             <span className="chip bg-violet-50 text-violet-600">事件链奇遇</span>
+            <button
+              type="button"
+              onClick={() => setAchievementOpen(true)}
+              className="chip bg-amber-50 text-amber-600 transition-colors hover:bg-amber-100"
+            >
+              🏆 成就墙
+            </button>
             <button
               type="button"
               onClick={() => setDebugOpen((v) => !v)}
@@ -552,6 +569,19 @@ export default function App() {
         onClose={dismissEvent}
         onSelectOption={selectEventOption}
       />
+
+      {/* 成就墙弹窗 */}
+      {achievementOpen && (
+        <AchievementModal
+          unlockedIds={
+            new Set([
+              ...legacyProfile.unlockedAchievementIds,
+              ...state.newUnlockedAchievementIds,
+            ])
+          }
+          onClose={() => setAchievementOpen(false)}
+        />
+      )}
 
       {/* 结局弹窗（游戏结束） */}
       {ending && (

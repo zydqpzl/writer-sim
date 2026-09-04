@@ -114,7 +114,7 @@ export default function CreationModal({ inventory, onPublish, onClose }: Props) 
               const isSelected = selected === idx
               return (
                 <button
-                  key={idx}
+                  key={card.id}
                   type="button"
                   onClick={() => setSelected(isSelected ? null : idx)}
                   className={[
