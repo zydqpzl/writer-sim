@@ -36,7 +36,7 @@ import {
 import { GENRE_BY_ID } from '../data/genres'
 import { GIMMICK_BY_ID } from '../data/gimmicks'
 import { INSPIRATION_BY_ID } from '../data/inspirations'
-import { PLATFORMS } from '../data/platforms'
+import { PLATFORMS, getPlatformAuthorRank } from '../data/platforms'
 import { computeAlgorithmMatchScore } from './platformEngine'
 import type { NovelPlatform, NovelPlatformId } from '../types/platform'
 import { GROWTH_CURVE_BY_ID } from '../data/growthCurves'
@@ -1211,7 +1211,14 @@ export function applyWriterAction(
   }
 
   // 10. 阶段流转（签约 / 上架）
-  const signResult = trySign(next, platform, currentDay, rng, rankEffects.contractDifficultyModifier)
+  const rankEffects = state
+    ? getPlatformAuthorRank(
+        project.platformId,
+        state.writerCareerProfile.platformCareer[project.platformId].totalRevenue,
+        state.writerCareerProfile.platformCareer[project.platformId].totalFans,
+      ).currentRank
+    : undefined
+  const signResult = trySign(next, platform, currentDay, rng, rankEffects?.contractDifficultyModifier)
   if (signResult.log) logs.push(signResult.log)
   next = signResult.project
 
