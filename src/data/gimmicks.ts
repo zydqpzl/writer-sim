@@ -1,4 +1,4 @@
-import type { Gimmick } from '../types/career'
+﻿import type { Gimmick } from '../types/career'
 
 export const GIMMICKS: Gimmick[] = [
   {
@@ -9,7 +9,7 @@ export const GIMMICKS: Gimmick[] = [
     memePotential: 95,
     commercialityModifier: 0.8,
     qualityModifier: 1.05,
-    complexityAdd: 30,
+    complexityModifier: 30,
   },
   {
     id: 'undercover_heroines',
@@ -19,7 +19,7 @@ export const GIMMICKS: Gimmick[] = [
     memePotential: 85,
     commercialityModifier: 1.0,
     qualityModifier: 1.0,
-    complexityAdd: 25,
+    complexityModifier: 25,
   },
   {
     id: 'system_gone_mad',
@@ -29,7 +29,7 @@ export const GIMMICKS: Gimmick[] = [
     memePotential: 90,
     commercialityModifier: 0.9,
     qualityModifier: 0.95,
-    complexityAdd: 25,
+    complexityModifier: 25,
   },
   {
     id: 'everyone_overthinks',
@@ -39,7 +39,7 @@ export const GIMMICKS: Gimmick[] = [
     memePotential: 88,
     commercialityModifier: 1.1,
     qualityModifier: 1.0,
-    complexityAdd: 20,
+    complexityModifier: 20,
   },
   {
     id: 'pure_love_scumbag',
@@ -49,7 +49,7 @@ export const GIMMICKS: Gimmick[] = [
     memePotential: 70,
     commercialityModifier: 1.0,
     qualityModifier: 1.0,
-    complexityAdd: 15,
+    complexityModifier: 15,
   },
   {
     id: 'villain_protagonist',
@@ -59,7 +59,7 @@ export const GIMMICKS: Gimmick[] = [
     memePotential: 80,
     commercialityModifier: 0.95,
     qualityModifier: 1.05,
-    complexityAdd: 20,
+    complexityModifier: 20,
   },
   {
     id: 'death_loop',
@@ -69,7 +69,7 @@ export const GIMMICKS: Gimmick[] = [
     memePotential: 75,
     commercialityModifier: 1.0,
     qualityModifier: 1.1,
-    complexityAdd: 20,
+    complexityModifier: 20,
   },
   {
     id: 'copy_superpower',
@@ -79,7 +79,7 @@ export const GIMMICKS: Gimmick[] = [
     memePotential: 60,
     commercialityModifier: 1.05,
     qualityModifier: 1.0,
-    complexityAdd: 10,
+    complexityModifier: 10,
   },
   {
     id: 'purity_joy_seeker',
@@ -89,7 +89,7 @@ export const GIMMICKS: Gimmick[] = [
     memePotential: 98,
     commercialityModifier: 0.75,
     qualityModifier: 0.95,
-    complexityAdd: 25,
+    complexityModifier: 25,
   },
   {
     id: 'absolute_rational',
@@ -99,7 +99,7 @@ export const GIMMICKS: Gimmick[] = [
     memePotential: 75,
     commercialityModifier: 1.0,
     qualityModifier: 1.05,
-    complexityAdd: 18,
+    complexityModifier: 18,
   },
   {
     id: 'tech_xiuzhen',
@@ -109,7 +109,7 @@ export const GIMMICKS: Gimmick[] = [
     memePotential: 92,
     commercialityModifier: 0.85,
     qualityModifier: 1.0,
-    complexityAdd: 28,
+    complexityModifier: 28,
   },
   {
     id: 'expelled_sect',
@@ -119,7 +119,7 @@ export const GIMMICKS: Gimmick[] = [
     memePotential: 65,
     commercialityModifier: 1.15,
     qualityModifier: 1.0,
-    complexityAdd: 12,
+    complexityModifier: 12,
   },
   {
     id: 'rules_manual',
@@ -129,7 +129,7 @@ export const GIMMICKS: Gimmick[] = [
     memePotential: 90,
     commercialityModifier: 0.8,
     qualityModifier: 1.1,
-    complexityAdd: 30,
+    complexityModifier: 30,
   },
   {
     id: 'life_simulator',
@@ -139,7 +139,7 @@ export const GIMMICKS: Gimmick[] = [
     memePotential: 75,
     commercialityModifier: 1.05,
     qualityModifier: 1.0,
-    complexityAdd: 18,
+    complexityModifier: 18,
   },
   {
     id: 'summon_players',
@@ -149,7 +149,7 @@ export const GIMMICKS: Gimmick[] = [
     memePotential: 95,
     commercialityModifier: 0.85,
     qualityModifier: 1.0,
-    complexityAdd: 26,
+    complexityModifier: 26,
   },
   {
     id: 'weird_invasion',
@@ -159,7 +159,7 @@ export const GIMMICKS: Gimmick[] = [
     memePotential: 92,
     commercialityModifier: 0.75,
     qualityModifier: 1.05,
-    complexityAdd: 32,
+    complexityModifier: 32,
   },
   {
     id: 'rebirth_memory',
@@ -169,7 +169,7 @@ export const GIMMICKS: Gimmick[] = [
     memePotential: 55,
     commercialityModifier: 1.1,
     qualityModifier: 1.0,
-    complexityAdd: 10,
+    complexityModifier: 10,
   },
 ]
 
@@ -180,3 +180,4 @@ export const GIMMICK_BY_ID: Record<string, Gimmick> = GIMMICKS.reduce(
   },
   {} as Record<string, Gimmick>,
 )
+

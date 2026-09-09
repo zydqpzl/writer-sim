@@ -7,7 +7,7 @@ export const GENRES: GenreConfig[] = [
     baseCommerciality: 70,
     baseMemePotential: 55,
     qualityWeight: 1.0,
-    complexityBase: 45,
+    complexityBase: 30,
     description: '修炼、宗门、天道，长青的大众题材。下限稳定，竞争也最惨烈。',
   },
   {
@@ -43,7 +43,7 @@ export const GENRES: GenreConfig[] = [
     baseCommerciality: 65,
     baseMemePotential: 68,
     qualityWeight: 0.95,
-    complexityBase: 35,
+    complexityBase: 25,
     description: '网游、电竞、第四天灾，天然带梗，更新压力大。',
   },
   {
@@ -52,7 +52,7 @@ export const GENRES: GenreConfig[] = [
     baseCommerciality: 56,
     baseMemePotential: 42,
     qualityWeight: 1.2,
-    complexityBase: 65,
+    complexityBase: 50,
     description: '考据与演义平衡，读者长情，但出圈难度大。',
   },
 ]

@@ -170,6 +170,12 @@ export interface BookTag {
   memePotential: number
   /** 商业化修正系数（乘算） */
   commercialityModifier: number
+  /** 复杂度修正：可正（增加难度）可负（降低难度） */
+  complexityModifier: number
+  /** 复杂度轴：同轴标签不叠罚，取该轴贡献最大的一项 */
+  complexityAxis?: string
+  /** 与其他标签的冲突惩罚 */
+  synergyPenalty?: { tagId: string; penalty: number }[]
   /** 兼容题材（空数组表示全题材） */
   compatibleGenres?: MainGenre[]
 }
@@ -187,6 +193,8 @@ export interface Gimmick {
   commercialityModifier: number
   /** 质量修正系数 */
   qualityModifier: number
+  /** 复杂度修正 */
+  complexityModifier: number
 }
 
 /** 市场流行趋势：活的流行风向 */

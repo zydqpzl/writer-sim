@@ -7,7 +7,8 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 15,
     memePotential: 50,
     commercialityModifier: 1.2,
-    complexityAdd: 10,
+    complexityModifier: -5,
+    complexityAxis: 'ease',
     description: '金手指系统，商业化的保险栓。',
   },
   {
@@ -16,7 +17,8 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 5,
     memePotential: 30,
     commercialityModifier: 0.95,
-    complexityAdd: 5,
+    complexityModifier: -5,
+    complexityAxis: 'ease',
     description: '慢节奏生活流，稳但难爆。',
   },
   {
@@ -25,7 +27,7 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 25,
     memePotential: 50,
     commercialityModifier: 1.05,
-    complexityAdd: 15,
+    complexityModifier: 10,
     description: '考试、科研、青春，有固定受众。',
   },
   {
@@ -34,7 +36,8 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 40,
     memePotential: 50,
     commercialityModifier: 1.0,
-    complexityAdd: 25,
+    complexityModifier: 20,
+    complexityAxis: 'war',
     description: '大场面与权谋，质量要求高。',
   },
   {
@@ -43,7 +46,8 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 60,
     memePotential: 85,
     commercialityModifier: 0.85,
-    complexityAdd: 25,
+    complexityModifier: 15,
+    complexityAxis: 'sci-tech',
     compatibleGenres: ['SCI_FI', 'URBAN', 'XUANHUAN'],
     description: '高科技+低生活，视觉与概念冲击力极强。',
   },
@@ -53,7 +57,8 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 85,
     memePotential: 95,
     commercialityModifier: 0.7,
-    complexityAdd: 30,
+    complexityModifier: 15,
+    complexityAxis: 'mythos',
     synergyPenalty: [
       { tagId: 'daily', penalty: 20 },
       { tagId: 'pure_love', penalty: 15 },
@@ -66,7 +71,8 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 70,
     memePotential: 90,
     commercialityModifier: 0.8,
-    complexityAdd: 20,
+    complexityModifier: -5,
+    complexityAxis: 'comedy',
     synergyPenalty: [
       { tagId: 'black_humor', penalty: 10 },
     ],
@@ -78,7 +84,7 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 55,
     memePotential: 88,
     commercialityModifier: 1.05,
-    complexityAdd: 20,
+    complexityModifier: 5,
     description: '主角没想那么多，全世界都在脑补。',
   },
   {
@@ -87,7 +93,8 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 20,
     memePotential: 55,
     commercialityModifier: 1.0,
-    complexityAdd: 10,
+    complexityModifier: -5,
+    complexityAxis: 'emotion',
     synergyPenalty: [
       { tagId: 'war', penalty: 12 },
       { tagId: 'black_humor', penalty: 10 },
@@ -100,7 +107,7 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 30,
     memePotential: 50,
     commercialityModifier: 1.0,
-    complexityAdd: 15,
+    complexityModifier: 5,
     description: '社畜共鸣，现实主义叙事。',
   },
   {
@@ -109,7 +116,7 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 35,
     memePotential: 60,
     commercialityModifier: 1.0,
-    complexityAdd: 20,
+    complexityModifier: 10,
     description: '末日、荒野、规则怪谈，紧张感驱动追读。',
   },
   {
@@ -118,7 +125,8 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 50,
     memePotential: 80,
     commercialityModifier: 0.85,
-    complexityAdd: 20,
+    complexityModifier: 5,
+    complexityAxis: 'comedy',
     description: '笑着笑着就哭了，容易引发深度讨论。',
   },
   {
@@ -127,7 +135,8 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 15,
     memePotential: 60,
     commercialityModifier: 1.1,
-    complexityAdd: 10,
+    complexityModifier: -5,
+    complexityAxis: 'ease',
     description: '绝不轻易涉险，底牌层出不穷，容错率极高。',
   },
   {
@@ -136,7 +145,7 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 20,
     memePotential: 65,
     commercialityModifier: 1.05,
-    complexityAdd: 12,
+    complexityModifier: 0,
     description: '独美搞事业，杀伐决断不圣母，女性向爽点。',
   },
   {
@@ -145,7 +154,8 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 35,
     memePotential: 70,
     commercialityModifier: 1.1,
-    complexityAdd: 8,
+    complexityModifier: -5,
+    complexityAxis: 'ease',
     description: '斩草除根，心狠手辣，读者大呼解气。',
   },
   {
@@ -154,7 +164,8 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 75,
     memePotential: 95,
     commercialityModifier: 0.8,
-    complexityAdd: 15,
+    complexityModifier: -5,
+    complexityAxis: 'comedy',
     description: '剧情全靠整活，各种玩梗无厘头，容易出圈也容易审美疲劳。',
   },
   {
@@ -163,7 +174,7 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 65,
     memePotential: 90,
     commercialityModifier: 0.9,
-    complexityAdd: 20,
+    complexityModifier: 10,
     description: '唯我独法，把诸天大佬玩弄于股掌，迪化与悬疑并存。',
   },
   {
@@ -172,7 +183,8 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 25,
     memePotential: 55,
     commercialityModifier: 1.15,
-    complexityAdd: 6,
+    complexityModifier: -5,
+    complexityAxis: 'ease',
     description: '开局即满级，纯粹看主角碾压与装逼，节奏直接。',
   },
   {
@@ -181,7 +193,7 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 30,
     memePotential: 75,
     commercialityModifier: 1.05,
-    complexityAdd: 10,
+    complexityModifier: 5,
     description: '别人修仙他搞科研，疯狂卷哭同门，代入感极强。',
   },
   {
@@ -190,7 +202,7 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 55,
     memePotential: 88,
     commercialityModifier: 0.95,
-    complexityAdd: 12,
+    complexityModifier: 5,
     description: '连线古代/万界，看古人破防反应，热点梗密集。',
   },
   {
@@ -199,7 +211,8 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 75,
     memePotential: 92,
     commercialityModifier: 0.8,
-    complexityAdd: 28,
+    complexityModifier: 15,
+    complexityAxis: 'mythos',
     description: '在看似正常的规则中找出致命漏洞，悬疑与恐怖并存。',
   },
   {
@@ -208,7 +221,7 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 45,
     memePotential: 78,
     commercialityModifier: 1.0,
-    complexityAdd: 18,
+    complexityModifier: 5,
     description: '人生/诡异/修仙模拟器，靠信息差和试错逆天改命。',
   },
   {
@@ -217,7 +230,8 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 80,
     memePotential: 85,
     commercialityModifier: 0.75,
-    complexityAdd: 30,
+    complexityModifier: 15,
+    complexityAxis: 'mythos',
     description: '不可名状、细思极恐，氛围感拉满但容易劝退胆小朋友。',
   },
   {
@@ -226,7 +240,8 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 70,
     memePotential: 95,
     commercialityModifier: 0.85,
-    complexityAdd: 25,
+    complexityModifier: 15,
+    complexityAxis: 'worldbuilding',
     description: '召唤玩家/不死勇者降临异世界，群像沙雕与史诗并存。',
   },
   {
@@ -235,7 +250,8 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 60,
     memePotential: 80,
     commercialityModifier: 0.95,
-    complexityAdd: 22,
+    complexityModifier: 10,
+    complexityAxis: 'worldbuilding',
     description: '副本闯关、团队博弈，世界观可无限扩展。',
   },
   {
@@ -244,7 +260,8 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 30,
     memePotential: 60,
     commercialityModifier: 1.1,
-    complexityAdd: 12,
+    complexityModifier: -5,
+    complexityAxis: 'ease',
     description: '带着未来记忆重启人生，信息差就是金手指。',
   },
   {
@@ -253,7 +270,7 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 50,
     memePotential: 70,
     commercialityModifier: 0.95,
-    complexityAdd: 20,
+    complexityModifier: 10,
     description: '经营怪物巢穴/地下城，反向攻略冒险者。',
   },
   {
@@ -262,7 +279,8 @@ export const BOOK_TAGS: BookTag[] = [
     riskFactor: 35,
     memePotential: 70,
     commercialityModifier: 1.0,
-    complexityAdd: -5,
+    complexityModifier: -5,
+    complexityAxis: 'ease',
     description: '借助现有爆款世界观与人设进行二创，前期吸量极强，但受制于原作口碑与平台政策。',
   },
 ]

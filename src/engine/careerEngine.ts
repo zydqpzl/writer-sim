@@ -346,19 +346,32 @@ export function checkAuthorEvolution(
   }
 }
 
-/** 计算作品复杂度 */
+/** 计算作品复杂度：基础题材难度 + 标签修正 + 组合冲突惩罚 */
 export function computeNovelComplexity(draft: BookCreationDraft): NovelComplexity {
   const genre = GENRE_BY_ID[draft.genre]
   const tags = draft.tags.map((id) => BOOK_TAG_BY_ID[id]).filter(Boolean)
   const gimmick = GIMMICK_BY_ID[draft.gimmick]
 
   const genreComplexity = genre.complexityBase
-  const gimmickComplexity = gimmick?.complexityAdd ?? 15
+  const gimmickComplexity = gimmick?.complexityModifier ?? 0
 
-  // 标签复杂度：取平均值，但数量越多惩罚越高
-  const tagComplexityBase =
-    tags.reduce((s, t) => s + (t.complexityAdd ?? 10), 0) / Math.max(1, tags.length)
-  const tagCountPenalty = Math.max(0, tags.length - 2) * 8
+  // 标签复杂度：同轴标签不叠罚，取该轴贡献最大的一项
+  const axisContributions = new Map<string, number>()
+  let noAxisTotal = 0
+  for (const tag of tags) {
+    const modifier = tag.complexityModifier ?? 0
+    if (tag.complexityAxis) {
+      const current = axisContributions.get(tag.complexityAxis) ?? 0
+      // 保留绝对值最大的贡献（正轴取最高，负轴取最低）
+      if (Math.abs(modifier) > Math.abs(current)) {
+        axisContributions.set(tag.complexityAxis, modifier)
+      }
+    } else {
+      noAxisTotal += modifier
+    }
+  }
+  const tagComplexityTotal =
+    noAxisTotal + Array.from(axisContributions.values()).reduce((s, v) => s + v, 0)
 
   // 标签间不兼容惩罚
   let synergyPenalty = 0
@@ -370,8 +383,7 @@ export function computeNovelComplexity(draft: BookCreationDraft): NovelComplexit
     }
   }
 
-  const overlapPenalty = tagCountPenalty + synergyPenalty
-  const rawScore = genreComplexity + gimmickComplexity + tagComplexityBase + overlapPenalty
+  const rawScore = genreComplexity + gimmickComplexity + tagComplexityTotal + synergyPenalty
 
   let tier: ComplexityTier = 'SIMPLE'
   if (rawScore >= 80) tier = 'EPIC'
@@ -383,7 +395,7 @@ export function computeNovelComplexity(draft: BookCreationDraft): NovelComplexit
     tier,
     breakdown: {
       genre: genreComplexity,
-      tags: tagComplexityBase + tagCountPenalty,
+      tags: tagComplexityTotal,
       gimmick: gimmickComplexity,
       overlapPenalty: synergyPenalty,
     },
@@ -426,8 +438,26 @@ export function computeExecutionCapacity(
   // 太监惩罚：每太监一本书，下一本开局 -3（上限 -15）
   const abandonPenalty = -Math.min(15, profile.totalAbandonedBooks * 3)
 
+  // 作者五维技能加成：基本功越扎实，掌控力越高
+  const skills = state.authorProfile.skills
+  const skillBonus = Math.min(
+    15,
+    (skills.prose + skills.pacing + skills.structure + skills.marketInsight) / 16,
+  )
+
+  // 履历化学反应加成：与题材匹配的背景提供额外掌控力
+  const backgroundBonuses = computeBackgroundBonuses(state.authorProfile, draft.genre)
+  const backgroundBonus = Math.min(15, backgroundBonuses.length * 8)
+
   return clamp(
-    base + masteryBonus + rankBonus[state.authorRank] + moodBonus + healthPenalty + abandonPenalty,
+    base +
+      masteryBonus +
+      rankBonus[state.authorRank] +
+      moodBonus +
+      healthPenalty +
+      abandonPenalty +
+      skillBonus +
+      backgroundBonus,
     10,
     100,
   )

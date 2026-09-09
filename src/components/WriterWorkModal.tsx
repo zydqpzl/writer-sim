@@ -196,10 +196,11 @@ export default function WriterWorkModal({
     () =>
       computeExecutionCapacity(draft, {
         writerCareerProfile,
+        authorProfile,
         authorRank: 'COLT',
         stats: { stress: 130, health: 80 },
       } as unknown as import('../types/game').GameState),
-    [draft, writerCareerProfile],
+    [draft, writerCareerProfile, authorProfile],
   )
   const executionCheckPreview = useMemo(
     () => checkExecutionCapacity(complexityPreview, executionPreview),

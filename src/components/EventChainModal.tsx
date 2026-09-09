@@ -27,6 +27,12 @@ function effectLabel(key: keyof EventEffect): string {
       return '影响力'
     case 'fans':
       return '粉丝'
+    case 'writerProject':
+      return '作品'
+    case 'getInspiration':
+      return '灵感'
+    case 'grantTrait':
+      return '特质'
     default:
       return key as string
   }
@@ -87,9 +93,11 @@ export default function EventChainModal({
         <div className="space-y-2.5">
           {step.options.map((opt, i) => {
             const entries = opt.effect
-              ? (Object.entries(opt.effect).filter(
-                  ([, v]) => v !== 0 && v !== undefined,
-                ) as [keyof EventEffect, number][])
+              ? (Object.entries(opt.effect).filter(([, v]) => {
+                  if (v === undefined || v === null || v === 0 || v === '') return false
+                  if (typeof v === 'object') return Object.keys(v).length > 0
+                  return true
+                }) as [keyof EventEffect, EventEffect[keyof EventEffect]][])
               : []
             return (
               <button
@@ -107,6 +115,34 @@ export default function EventChainModal({
                   </div>
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
                     {entries.map(([k, v]) => {
+                      if (k === 'writerProject' && typeof v === 'object') {
+                        const deltas = Object.entries(v).filter(
+                          ([, val]) => typeof val === 'number' && val !== 0,
+                        )
+                        return deltas.map(([subK, val]) => {
+                          const num = val as number
+                          const positive = num > 0
+                          const sign = positive ? '+' : ''
+                          return (
+                            <span
+                              key={`${k}-${subK}`}
+                              className="chip bg-slate-50 text-slate-600 ring-1 ring-inset ring-slate-200/70"
+                            >
+                              作品{subK} {sign}{num}
+                            </span>
+                          )
+                        })
+                      }
+                      if (typeof v !== 'number') {
+                        return (
+                          <span
+                            key={k}
+                            className="chip bg-slate-50 text-slate-600 ring-1 ring-inset ring-slate-200/70"
+                          >
+                            {effectLabel(k)}
+                          </span>
+                        )
+                      }
                       const positive = v > 0
                       const sign = positive ? '+' : ''
                       const tone =
