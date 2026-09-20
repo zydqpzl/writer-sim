@@ -62,7 +62,6 @@ export default function App() {
     debugAddStress,
     debugSetStress,
     debugTriggerBreakdown,
-    debugGrantTrait,
     debugStartWriterEventChain,
     debugJumpToYearEnd,
     applyMemeHomageToActiveProject,

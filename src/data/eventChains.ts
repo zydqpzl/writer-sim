@@ -32,6 +32,14 @@ import {
   WRITER_COMMENT_REVOLT_CHAIN,
   WRITER_PEER_ROAST_CHAIN,
 } from './chains/writerDrama'
+import {
+  YEAR_OPENING_ABANDON_SHADOW_CHAIN,
+  YEAR_OPENING_BURNOUT_CHAIN,
+  YEAR_OPENING_COMPLETE_BONUS_CHAIN,
+  YEAR_OPENING_MIDDLING_CHAIN,
+  YEAR_OPENING_ONE_HIT_CHAIN,
+  YEAR_OPENING_POVERTY_CHAIN,
+} from './chains/yearOpening'
 
 /** 崩溃时刻 SSR 卡：精神崩溃时产出的顶级自传式槽点卡（发疯创作选项） */
 export const CARD_BREAKDOWN_VOMIT: InspirationCard = {
@@ -76,4 +84,10 @@ export const EVENT_CHAINS: Record<string, EventChain> = {
   fanfiction_blowup: FANFICTION_BLOWUP_CHAIN,
   fanfiction_copyright: FANFICTION_COPYRIGHT_CHAIN,
   fanfiction_payback: FANFICTION_PAYBACK_CHAIN,
+  year_opening_abandon_shadow: YEAR_OPENING_ABANDON_SHADOW_CHAIN,
+  year_opening_complete_bonus: YEAR_OPENING_COMPLETE_BONUS_CHAIN,
+  year_opening_one_hit: YEAR_OPENING_ONE_HIT_CHAIN,
+  year_opening_poverty: YEAR_OPENING_POVERTY_CHAIN,
+  year_opening_burnout: YEAR_OPENING_BURNOUT_CHAIN,
+  year_opening_middling: YEAR_OPENING_MIDDLING_CHAIN,
 }

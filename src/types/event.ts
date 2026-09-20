@@ -4,7 +4,7 @@
 export type CardQuality = '普通' | '稀有' | '史诗' | '传说'
 
 /** 灵感卡牌适用题材 */
-export type CardGenre = '人物观察' | '喜剧' | '情感' | '世界观' | '哲思' | '社会观察'
+export type CardGenre = '人物观察' | '喜剧' | '情感' | '世界观' | '哲思' | '社会观察' | '同人'
 
 /** 灵感卡牌（模板） */
 export interface InspirationCard {

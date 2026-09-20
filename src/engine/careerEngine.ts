@@ -16,21 +16,18 @@ import type {
   GrowthCurveType,
   InspirationApplyResult,
   MainGenre,
-  MarketTrend,
   MemeGenerateResult,
   NovelComplexity,
+  NovelStyleTrait,
   ProjectPhase,
   WordOfMouthPool,
   WriterAction,
   WriterCareerProfile,
   WriterProject,
-  WriterStrategy,
 } from '../types/career'
 import { BOOK_TAG_BY_ID } from '../data/bookTags'
 import {
-  BACKGROUND_TAGS,
   BACKGROUND_TAG_BY_ID,
-  DOMAIN_LABELS,
   findGenreSynergies,
 } from '../data/backgrounds'
 import { GENRE_BY_ID } from '../data/genres'
@@ -54,7 +51,6 @@ import {
   WRITER_SIGNING_THRESHOLD_WORDS,
   WRITER_STRATEGIES,
   generateRandomDraft,
-  generateTrendFollowingDraft,
   generateWriterTitle,
 } from '../data/writer'
 import type { GameState } from '../types/game'
@@ -733,6 +729,7 @@ export function updateWriterCareerProfile(
     unlockedStyleTraits: [...profile.unlockedStyleTraits],
     totalCompletedBooks: profile.totalCompletedBooks,
     totalAbandonedBooks: profile.totalAbandonedBooks,
+    platformCareer: { ...profile.platformCareer },
   }
 
   nextProfile.genreMastery[project.genre] = {

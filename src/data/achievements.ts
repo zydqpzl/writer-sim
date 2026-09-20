@@ -17,8 +17,8 @@ export const ACHIEVEMENTS: GameAchievement[] = [
     description: '你的作品第一次被平台签下，迈出了职业化写作的第一步。',
     icon: '🖊️',
     hint: '成功签约任意一本网络小说。',
-    metaBonus: '下一局初始【掌控力】+3',
-    metaBonusValue: { startingSkillDelta: { control: 3 } },
+    metaBonus: '下一局初始【结构力】+3',
+    metaBonusValue: { startingSkillDelta: { structure: 3 } },
   },
   {
     id: 'first_complete',
@@ -150,15 +150,6 @@ function getTotalWordCount(projects: CareerProject[]): number {
   return getWriterProjects(projects).reduce((sum, p) => sum + (p.wordCount ?? 0), 0)
 }
 
-/** 计算历史出现过的不同笔名（含当前项目） */
-function getUsedPenNames(state: GameState): Set<string> {
-  const names = new Set<string>()
-  getWriterProjects(state.careerProjects).forEach((p) => {
-    if (p.penName) names.add(p.penName)
-  })
-  return names
-}
-
 /**
  * 检查并返回本局新解锁的成就 id 列表。
  * @param state 当前游戏状态
@@ -183,7 +174,6 @@ export function checkNewAchievements(
     0,
   )
   const signedProjects = writerProjects.filter((p) => p.signed)
-  const penNames = getUsedPenNames(state)
 
   grantIf('first_sign', signedProjects.length >= 1)
   grantIf('first_complete', state.writerCareerProfile.totalCompletedBooks >= 1)
@@ -244,7 +234,8 @@ export function aggregateMetaBonuses(unlockedIds: string[]) {
     }
     if (ach.metaBonusValue.startingSkillDelta) {
       for (const [k, v] of Object.entries(ach.metaBonusValue.startingSkillDelta)) {
-        bonus.startingSkillDelta[k] = (bonus.startingSkillDelta[k] ?? 0) + (v ?? 0)
+        const delta = typeof v === 'number' ? v : 0
+        bonus.startingSkillDelta[k] = (bonus.startingSkillDelta[k] ?? 0) + delta
       }
     }
     if (ach.metaBonusValue.startingCards) {

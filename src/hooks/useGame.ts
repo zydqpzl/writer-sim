@@ -15,7 +15,7 @@ import type {
   StressLevel,
   TimeSlot,
 } from '../types/game'
-import type { WriterProject } from '../types/career'
+import type { WriterCareerProfile, WriterProject } from '../types/career'
 import { isWriterProject } from '../types/career'
 import type { EventChain, EventOption, EventStep } from '../types/event'
 import {
@@ -48,7 +48,11 @@ import {
 } from '../data/gameData'
 import { AUTHOR_TITLES, AUTHOR_TITLE_BY_ID } from '../data/authorTitles'
 import { ACHIEVEMENT_BY_ID, checkNewAchievements } from '../data/achievements'
-import { createYearStartSnapshot, generateYearSummary } from '../data/yearSummary'
+import {
+  createYearStartSnapshot,
+  determineYearOpeningChain,
+  generateYearSummary,
+} from '../data/yearSummary'
 import {
   HOUSING_BY_ID,
   INSURANCE_ITEMS,
@@ -57,6 +61,7 @@ import {
 } from '../data/lifestyleItems'
 import {
   STARTING_IDENTITIES,
+  applyLegacyOpeningEffects,
   buildInitialState,
   loadLegacyProfile,
   resolveKeptCards,
@@ -81,7 +86,6 @@ import {
   completeWriterProject,
   computeAuthorRank,
   createAuthorProfile,
-  createEmptyWriterCareerProfile,
   createWriterProject,
   dailyTickWriter,
   generateMemeFromProject,
@@ -410,9 +414,16 @@ function computeStartState(
 export function useGame(initialSetup?: StartSetup) {
   const [startSetup, setStartSetup] = useState<StartSetup | undefined>(initialSetup)
   const [legacyProfile, setLegacyProfile] = useState<LegacyProfile>(() => loadLegacyProfile())
-  const [state, setState] = useState<GameState>(() =>
-    computeStartState(startSetup, legacyProfile),
-  )
+  const { state: initialState, result: initialOpening } = (() => {
+    const s = computeStartState(startSetup, legacyProfile)
+    const { state: withOpening, result } = applyLegacyOpeningEffects(
+      s,
+      legacyProfile.lastRunSummary,
+    )
+    return { state: withOpening, result }
+  })()
+
+  const [state, setState] = useState<GameState>(initialState)
   const [logs, setLogs] = useState<LogEntry[]>([
     {
       id: logIdSeed++,
@@ -421,8 +432,27 @@ export function useGame(initialSetup?: StartSetup) {
       kind: 'system',
       text: '毕业两个月试用期开始，你的自由职业生存挑战正式启动。',
     },
+    ...initialOpening.logs.map((l) => ({
+      id: logIdSeed++,
+      day: 1,
+      slot: 'morning' as const,
+      kind: l.kind,
+      text: l.text,
+    })),
   ])
-  const [pendingEvent, setPendingEvent] = useState<GameEvent | null>(null)
+  const [pendingEvent, setPendingEvent] = useState<GameEvent | null>(() =>
+    initialOpening.popup
+      ? {
+          id: eventIdSeed++,
+          type: 'major_branch',
+          title: initialOpening.popup.title,
+          icon: '🌀',
+          tone: initialOpening.popup.tone,
+          text: initialOpening.popup.text,
+          effects: initialOpening.popup.effects,
+        }
+      : null,
+  )
 
   // 结局运行态
   const [ending, setEnding] = useState<Ending | null>(null)
@@ -439,7 +469,12 @@ export function useGame(initialSetup?: StartSetup) {
       eventIdSeed = 1
       const nextSetup = setup ?? startSetup
       setStartSetup(nextSetup)
-      setState(computeStartState(nextSetup))
+      const fresh = computeStartState(nextSetup, legacyProfile)
+      const { state: nextState, result: opening } = applyLegacyOpeningEffects(
+        fresh,
+        legacyProfile.lastRunSummary,
+      )
+      setState(nextState)
       setLogs([
         {
           id: logIdSeed++,
@@ -450,8 +485,27 @@ export function useGame(initialSetup?: StartSetup) {
             ? `以【${nextSetup.identity.name}】身份开局，新的一局开始。`
             : '新的一局开始。这次，你想活出怎样的人生？',
         },
+        ...opening.logs.map((l) => ({
+          id: logIdSeed++,
+          day: 1,
+          slot: 'morning' as const,
+          kind: l.kind,
+          text: l.text,
+        })),
       ])
-      setPendingEvent(null)
+      setPendingEvent(
+        opening.popup
+          ? {
+              id: eventIdSeed++,
+              type: 'major_branch' as const,
+              title: opening.popup.title,
+              icon: '🌀',
+              tone: opening.popup.tone,
+              text: opening.popup.text,
+              effects: opening.popup.effects,
+            }
+          : null,
+      )
       setEnding(null)
       setCurrentChain(null)
       setCurrentStepId(null)
@@ -477,6 +531,7 @@ export function useGame(initialSetup?: StartSetup) {
         carriedCardId,
         state.unlockedMemes,
         state.newUnlockedAchievementIds,
+        state,
       )
       saveLegacyProfile(next)
       setLegacyProfile(next)
@@ -491,30 +546,6 @@ export function useGame(initialSetup?: StartSetup) {
     },
     [],
   )
-
-  /** 年度总结：选择继续写，进入下一年 */
-  const continueToNextYear = useCallback(() => {
-    if (!state.pendingYearSummary) return
-    setState({
-      ...state,
-      pendingYearSummary: null,
-      yearStartSnapshot: createYearStartSnapshot(state),
-    })
-    log(
-      state.day,
-      'morning',
-      'celebrate',
-      `第 ${state.pendingYearSummary.year + 1} 年开始，江湖仍在继续。`,
-    )
-  }, [state, log])
-
-  /** 年度总结：选择封笔退休，触发结局结算 */
-  const retireNow = useCallback(() => {
-    if (!state.pendingYearSummary) return
-    const finalEnding = resolveFinalEnding(state)
-    setEnding(finalEnding)
-    log(state.day, 'morning', 'celebrate', `结局解锁：${finalEnding.title}`)
-  }, [state, log])
 
   const emitEvent = useCallback(
     (
@@ -570,13 +601,44 @@ export function useGame(initialSetup?: StartSetup) {
           if (chainId === 'fanfiction_copyright') flags.copyright = true
           if (chainId === 'fanfiction_payback') flags.payback = true
           const nextProjects = [...prev.careerProjects]
-          nextProjects[projectIdx] = { ...project, triggeredFanfictionChains: flags }
+          nextProjects[projectIdx] = { ...project, triggeredFanfictionChains: flags } as WriterProject
           return { ...prev, careerProjects: nextProjects }
         })
       }
     },
     [log],
   )
+
+  /** 年度总结：选择继续写，进入下一年 */
+  const continueToNextYear = useCallback(() => {
+    if (!state.pendingYearSummary) return
+    const summary = state.pendingYearSummary
+    setState({
+      ...state,
+      pendingYearSummary: null,
+      yearStartSnapshot: createYearStartSnapshot(state),
+    })
+    log(
+      state.day,
+      'morning',
+      'celebrate',
+      `第 ${summary.year + 1} 年开始，江湖仍在继续。`,
+    )
+
+    // C 阶段：根据上一年总结触发跨年开局事件链
+    const openingChainId = determineYearOpeningChain(summary)
+    if (openingChainId) {
+      startWriterEventChain(openingChainId, state.day, 'morning')
+    }
+  }, [state, log, startWriterEventChain])
+
+  /** 年度总结：选择封笔退休，触发结局结算 */
+  const retireNow = useCallback(() => {
+    if (!state.pendingYearSummary) return
+    const finalEnding = resolveFinalEnding(state)
+    setEnding(finalEnding)
+    log(state.day, 'morning', 'celebrate', `结局解锁：${finalEnding.title}`)
+  }, [state, log])
 
   /** 选择弹窗事件的内嵌选项（用于 stress_breakdown 等非事件链的一步选择） */
   const selectEventOption = useCallback(
@@ -1126,7 +1188,7 @@ export function useGame(initialSetup?: StartSetup) {
       }
       const { newTitleIds, nextTraits } = checkAuthorTitleUnlocks(
         projectedState,
-        result.project,
+        result.project as WriterProject,
       )
       if (newTitleIds.length > 0) {
         newTitleIds.forEach((id) => {

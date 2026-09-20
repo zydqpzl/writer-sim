@@ -1,12 +1,47 @@
-import type { GameState, PlayerStats } from '../types/game'
-import type { AuthorMeme } from '../types/career'
+import type { GameState, PlayerStats, LogKind } from '../types/game'
+import type { AuthorMeme, MainGenre } from '../types/career'
 import type { InspirationCard } from '../types/event'
 import { CARD_POOL } from './eventChains'
 import { INITIAL_STATE } from './gameData'
-import type { Ending } from '../types/game'
+import type { Ending, EndingTag } from '../types/game'
 import { generateInitialNpcs } from '../engine/platformEngine'
 import { aggregateMetaBonuses } from './achievements'
 import type { AuthorProfile } from '../types/career'
+import { isWriterProject } from '../types/career'
+
+function clamp(n: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, n))
+}
+
+/** 上一局的浓缩历史，用于影响下一局开局 */
+export interface RunSummary {
+  /** 结局 id */
+  endingId: string
+  /** 结局类型标签 */
+  endingTag: EndingTag
+  /** 本局最高粉丝数 */
+  peakFans: number
+  /** 本局累计收益 */
+  totalRevenue: number
+  /** 完本数 */
+  completedBooks: number
+  /** 太监数 */
+  abandonedBooks: number
+  /** 总字数 */
+  totalWordCount: number
+  /** 最出名作品 */
+  famousProject?: {
+    title: string
+    genre: MainGenre
+  }
+  /** 黑历史标签：决定下一局开局事件 */
+  blackHistory?:
+    | 'abandon_king'
+    | 'controversy_king'
+    | 'one_hit_wonder'
+    | 'poverty_master'
+    | 'steady_master'
+}
 
 /** 遗产档案（跨局持久化） */
 export interface LegacyProfile {
@@ -22,6 +57,10 @@ export interface LegacyProfile {
   unlockedMemes: AuthorMeme[]
   /** 已解锁的成就 id（跨局持久化） */
   unlockedAchievementIds: string[]
+  /** 上一局总结，为空表示是第一局 */
+  lastRunSummary?: RunSummary
+  /** 已完成的总局数 */
+  totalRuns: number
 }
 
 /** 开局身份定义 */
@@ -106,13 +145,15 @@ export function loadLegacyProfile(): LegacyProfile {
     if (raw) {
       const parsed = JSON.parse(raw) as LegacyProfile
       return {
-        totalLegacyPoints: parsed.totalLegacyPoints ?? 0,
-        unlockedEndingIds: parsed.unlockedEndingIds ?? [],
-        unlockedIdentityIds: parsed.unlockedIdentityIds ?? ['default'],
-        keptCardIds: parsed.keptCardIds ?? [],
-        unlockedMemes: parsed.unlockedMemes ?? [],
-        unlockedAchievementIds: parsed.unlockedAchievementIds ?? [],
-      }
+    totalLegacyPoints: parsed.totalLegacyPoints ?? 0,
+    unlockedEndingIds: parsed.unlockedEndingIds ?? [],
+    unlockedIdentityIds: parsed.unlockedIdentityIds ?? ['default'],
+    keptCardIds: parsed.keptCardIds ?? [],
+    unlockedMemes: parsed.unlockedMemes ?? [],
+    unlockedAchievementIds: parsed.unlockedAchievementIds ?? [],
+    lastRunSummary: parsed.lastRunSummary,
+    totalRuns: parsed.totalRuns ?? 0,
+  }
     }
   } catch {
     // ignore
@@ -124,6 +165,7 @@ export function loadLegacyProfile(): LegacyProfile {
     keptCardIds: [],
     unlockedMemes: [],
     unlockedAchievementIds: [],
+    totalRuns: 0,
   }
 }
 
@@ -188,7 +230,7 @@ export function buildInitialState(
               k,
               Math.min(
                 100,
-                (patched.authorProfile.skills as Record<string, number>)[k] + v,
+                (patched.authorProfile.skills as unknown as Record<string, number>)[k] + v,
               ),
             ]),
           ),
@@ -230,6 +272,7 @@ export function settleLegacy(
   carriedCardId: string | null,
   currentMemes: AuthorMeme[] = [],
   newAchievementIds: string[] = [],
+  state?: GameState,
 ): LegacyProfile {
   const points = legacyPointsFor(ending)
   const unlockedEndingIds = profile.unlockedEndingIds.includes(ending.id)
@@ -264,6 +307,8 @@ export function settleLegacy(
     new Set([...profile.unlockedAchievementIds, ...newAchievementIds]),
   )
 
+  const lastRunSummary = state ? deriveRunSummary(state, ending) : undefined
+
   return {
     totalLegacyPoints: newTotal,
     unlockedEndingIds,
@@ -271,5 +316,202 @@ export function settleLegacy(
     keptCardIds: carriedCardId ? [carriedCardId] : [],
     unlockedMemes: Array.from(memeMap.values()),
     unlockedAchievementIds,
+    lastRunSummary,
+    totalRuns: profile.totalRuns + 1,
+  }
+}
+
+export function deriveRunSummary(state: GameState, ending: Ending): RunSummary {
+  const projects = state.careerProjects.filter(isWriterProject)
+  const peakFans = Math.max(
+    state.stats.fans,
+    ...projects.map((p) => p.stats.totalFansGained),
+  )
+  const totalRevenue = Object.values(state.writerCareerProfile.platformCareer).reduce(
+    (s, p) => s + (p.totalRevenue ?? 0),
+    0,
+  )
+  const totalWordCount = projects.reduce((s, p) => s + p.wordCount, 0)
+  const completed = state.writerCareerProfile.totalCompletedBooks
+  const abandoned = state.writerCareerProfile.totalAbandonedBooks
+
+  const famous = projects.reduce<import('../types/career').WriterProject | undefined>(
+    (best, p) => {
+      if (!best || p.stats.totalFansGained > best.stats.totalFansGained) return p
+      return best
+    },
+    undefined,
+  )
+
+  let blackHistory: RunSummary['blackHistory'] = undefined
+  if (abandoned >= 2 && abandoned > completed) blackHistory = 'abandon_king'
+  else if (completed >= 2 && abandoned === 0) blackHistory = 'steady_master'
+  else if (peakFans >= 1000 && totalRevenue < 1000) blackHistory = 'one_hit_wonder'
+  else if (totalRevenue < 500 && state.day >= 30) blackHistory = 'poverty_master'
+
+  return {
+    endingId: ending.id,
+    endingTag: ending.tag,
+    peakFans,
+    totalRevenue,
+    completedBooks: completed,
+    abandonedBooks: abandoned,
+    totalWordCount,
+    famousProject: famous
+      ? { title: famous.title, genre: famous.genre }
+      : undefined,
+    blackHistory,
+  }
+}
+
+export interface OpeningEffectResult {
+  statDelta: Partial<PlayerStats>
+  subcultureReputationDelta: number
+  logs: { kind: LogKind; text: string }[]
+  popup?: {
+    title: string
+    text: string
+    tone: 'good' | 'bad' | 'neutral' | 'critical'
+    effects: string[]
+  }
+}
+
+export function applyLegacyOpeningEffects(
+  state: GameState,
+  summary?: RunSummary,
+): { state: GameState; result: OpeningEffectResult } {
+  if (!summary) {
+    return {
+      state,
+      result: { statDelta: {}, subcultureReputationDelta: 0, logs: [] },
+    }
+  }
+
+  const delta: Partial<PlayerStats> = {}
+  let subcultureDelta = 0
+  const logs: OpeningEffectResult['logs'] = []
+  const effects: string[] = []
+
+  const {
+    completedBooks,
+    abandonedBooks,
+    peakFans,
+    totalRevenue,
+    famousProject,
+    blackHistory,
+    endingTag,
+  } = summary
+
+  if (famousProject && peakFans >= 500) {
+    const fanBonus = Math.min(50, Math.floor(peakFans * 0.02))
+    delta.fans = (delta.fans ?? 0) + fanBonus
+    delta.influence = (delta.influence ?? 0) + Math.min(10, Math.floor(fanBonus / 5))
+    logs.push({
+      kind: 'celebrate',
+      text: `老读者还记得你上本《${famousProject.title}》，开局时已有 ${fanBonus} 人闻讯而来。`,
+    })
+    effects.push(`粉丝 +${fanBonus}`)
+  }
+
+  if (completedBooks >= 1) {
+    delta.stress = (delta.stress ?? 0) - 3
+    logs.push({ kind: 'gain', text: '完本经历让你心态更稳，开局压力降低。' })
+    effects.push('压力 -3')
+  }
+
+  if (abandonedBooks >= 1) {
+    const famPenalty = Math.min(10, abandonedBooks * 3)
+    delta.familyApproval = (delta.familyApproval ?? 0) - famPenalty
+    delta.stress = (delta.stress ?? 0) + 2
+    logs.push({
+      kind: 'loss',
+      text: `论坛里有人扒出你太监了 ${abandonedBooks} 本书，父母看你的眼神更复杂了。`,
+    })
+    effects.push(`父母 -${famPenalty}`)
+  }
+
+  if (blackHistory === 'abandon_king') {
+    delta.familyApproval = (delta.familyApproval ?? 0) - 5
+    delta.stress = (delta.stress ?? 0) + 5
+    logs.push({
+      kind: 'loss',
+      text: '“切书狂魔”的名号还在江湖流传，读者对你新书的第一反应是先看会不会太监。',
+    })
+    effects.push('压力 +5')
+  }
+
+  if (blackHistory === 'one_hit_wonder') {
+    delta.fans = (delta.fans ?? 0) + 20
+    delta.stress = (delta.stress ?? 0) + 5
+    logs.push({
+      kind: 'event',
+      text: '上本红了但没怎么变现，这次你既兴奋又焦虑。',
+    })
+    effects.push('粉丝 +20，压力 +5')
+  }
+
+  if (blackHistory === 'steady_master') {
+    delta.energy = (delta.energy ?? 0) + 5
+    delta.stress = (delta.stress ?? 0) - 2
+    logs.push({
+      kind: 'gain',
+      text: '你是有完本记录的靠谱作者，编辑愿意多给你一点耐心。',
+    })
+    effects.push('精力 +5，压力 -2')
+  }
+
+  if (blackHistory === 'poverty_master') {
+    delta.savings = (delta.savings ?? 0) - 500
+    delta.stress = (delta.stress ?? 0) + 3
+    logs.push({ kind: 'loss', text: '上一局穷到吃土，你发誓这一局必须先活下去。' })
+    effects.push('存款 -500')
+  }
+
+  if (totalRevenue >= 10000) {
+    const moneyBonus = Math.min(3000, Math.floor(totalRevenue * 0.1))
+    delta.savings = (delta.savings ?? 0) + moneyBonus
+    logs.push({
+      kind: 'gain',
+      text: `上一局存下的稿费让你开局多了 ${moneyBonus} 块存款。`,
+    })
+    effects.push(`存款 +${moneyBonus}`)
+  }
+
+  if (endingTag === 'fail') {
+    delta.stress = (delta.stress ?? 0) + 5
+    delta.energy = (delta.energy ?? 0) + 5
+    logs.push({
+      kind: 'system',
+      text: '失败的上一局让你憋着一股劲，但也睡得不太安稳。',
+    })
+    effects.push('压力 +5，精力 +5')
+  }
+
+  const nextStats = { ...state.stats }
+  for (const [k, v] of Object.entries(delta)) {
+    if (v === undefined) continue
+    const key = k as keyof PlayerStats
+    if (key === 'fans') nextStats.fans = clamp(nextStats.fans + v, 0, 999_999)
+    else if (key === 'savings') nextStats.savings = clamp(nextStats.savings + v, -5000, 999_999)
+    else nextStats[key] = clamp(nextStats[key] + v, 0, 200)
+  }
+
+  const popup =
+    logs.length > 0
+      ? {
+          title: '上一局的回响',
+          text: '你带着上一局的痕迹重新开始，江湖还没忘记你。',
+          tone: 'neutral' as const,
+          effects,
+        }
+      : undefined
+
+  return {
+    state: {
+      ...state,
+      stats: nextStats,
+      subcultureReputation: clamp(state.subcultureReputation + subcultureDelta, 0, 100),
+    },
+    result: { statDelta: delta, subcultureReputationDelta: subcultureDelta, logs, popup },
   }
 }

@@ -247,6 +247,64 @@ const TRAIT_TEMPLATES: StatusTrait[] = [
       healthDeltaPerDay: 1,
     },
   },
+
+  /* ============== 年度开局状态（C 阶段跨年事件） ============== */
+  {
+    id: 'trait_long_contract_pressure',
+    name: '长约压力',
+    type: 'DEBUFF',
+    description: '平台长约在身，编辑盯得更紧，压力上限被压缩。',
+    durationDays: 5,
+    effects: {
+      stressMaxDelta: -30,
+      stressDeltaPerDay: 4,
+    },
+  },
+  {
+    id: 'trait_commercial_shackle',
+    name: '创作束缚',
+    type: 'DEBUFF',
+    description: '为了生计接定制文，创作自由度下降，精神内耗加剧。',
+    durationDays: 6,
+    effects: {
+      stressMaxDelta: -20,
+      stressDeltaPerDay: 3,
+    },
+  },
+  {
+    id: 'trait_part_time_fatigue',
+    name: '兼职疲劳',
+    type: 'DEBUFF',
+    description: '白天兼职晚上码字，精力上限被长期占用。',
+    durationDays: 5,
+    effects: {
+      energyMaxDelta: -15,
+      stressDeltaPerDay: 2,
+    },
+  },
+  {
+    id: 'trait_forced_rest',
+    name: '强制休养',
+    type: 'BUFF',
+    description: '医嘱要求静养，健康逐渐恢复，但不能全力创作。',
+    durationDays: 3,
+    effects: {
+      healthDeltaPerDay: 5,
+      stressDeltaPerDay: -5,
+      energyMaxDelta: -10,
+    },
+  },
+  {
+    id: 'trait_all_or_nothing',
+    name: '孤注一掷',
+    type: 'BUFF',
+    description: '新年立志必须出爆款，抗压能力提升，但焦虑同步累积。',
+    durationDays: 4,
+    effects: {
+      stressMaxDelta: 25,
+      stressDeltaPerDay: 4,
+    },
+  },
 ]
 
 /** 按 id 索引的特质模板池（运行时复制使用，不直接持有引用） */

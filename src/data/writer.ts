@@ -2,7 +2,6 @@
 
 import type {
   BookCreationDraft,
-  BookTag,
   MainGenre,
   MarketTrend,
   WriterAction,

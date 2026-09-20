@@ -4,10 +4,7 @@ import { GENRES, GENRE_BY_ID } from '../data/genres'
 import { GIMMICKS, GIMMICK_BY_ID } from '../data/gimmicks'
 import { getTrendMatches } from '../data/marketTrends'
 import { PLATFORMS } from '../data/platforms'
-import {
-  NOVEL_STYLE_TRAITS,
-  NOVEL_STYLE_TRAIT_BY_ID,
-} from '../data/novelStyleTraits'
+import { NOVEL_STYLE_TRAITS } from '../data/novelStyleTraits'
 import {
   WRITER_ACTIONS,
   generateRandomDraft,
@@ -19,7 +16,6 @@ import {
   computeBackgroundBonuses,
   computeExecutionCapacity,
   computeNovelComplexity,
-  createAuthorProfile,
   determineGrowthCurve,
 } from '../engine/careerEngine'
 import { computeAlgorithmMatchScore } from '../engine/platformEngine'
@@ -175,6 +171,12 @@ export default function WriterWorkModal({
   onCompleteProject,
   onAbandonProject,
 }: Props) {
+  // 预留扩展：灵感注入 / 梗致敬
+  void inspirations
+  void unlockedMemes
+  void onInjectInspiration
+  void onHomageMeme
+
   const [selectedPlatformId, setSelectedPlatformId] = useState<NovelPlatformId>(platforms[0]?.id ?? 'ZHONGDIAN')
   const [setupMode, setSetupMode] = useState<SetupMode>('custom')
   const [draft, setDraft] = useState<BookCreationDraft>(() => ({

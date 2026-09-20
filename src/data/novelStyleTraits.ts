@@ -69,9 +69,9 @@ export const NOVEL_STYLE_TRAITS: NovelStyleTrait[] = [
     description: '每一章都断在最关键处，追读率极高但读者骂声也大。',
     buff: {
       fanConversionBoost: 1.3,
+      readerMoodRecovery: 0.7,
     },
     debuff: {
-      readerMoodRecovery: 0.7,
       hypeDecayBoost: 1.3,
     },
     unlockCondition: {

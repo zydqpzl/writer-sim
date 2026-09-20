@@ -157,6 +157,8 @@ export interface GenreConfig {
   baseMemePotential: number
   /** 质量权重加成（影响算法分） */
   qualityWeight: number
+  /** 基础复杂度 0-100 */
+  complexityBase: number
   description: string
 }
 
@@ -178,6 +180,8 @@ export interface BookTag {
   synergyPenalty?: { tagId: string; penalty: number }[]
   /** 兼容题材（空数组表示全题材） */
   compatibleGenres?: MainGenre[]
+  /** 标签描述说明 */
+  description?: string
 }
 
 /** 核心噱头/卖点 */
@@ -211,6 +215,10 @@ export interface MarketTrend {
   decayDays: number
   /** 各 tag 被跟风使用的次数（用于饱和度计算） */
   saturation: Record<string, number>
+  /** 平台偏好的题材（用于年度总结预测） */
+  favoredGenre?: string
+  /** 市场调性（用于年度总结预测） */
+  tone?: string
 }
 
 /** 复杂度等级 */
@@ -266,7 +274,7 @@ export interface NovelStyleTrait {
     fanConversionBoost?: number
     /** 口碑积累速度加成倍率 */
     wordOfMouthBoost?: number
-    /** 读者情绪自然恢复加成 */
+    /** 读者情绪自然恢复加成（buff） */
     readerMoodRecovery?: number
     /** 完结后长尾收益加成 */
     longTailBoost?: number

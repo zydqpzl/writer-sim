@@ -1,7 +1,5 @@
 // 江湖称号 / 读者爱称系统类型定义
 
-import type { WriterStrategy } from './career'
-
 export type AuthorTitleMetric =
   | 'consecutive_daily_updates'
   | 'total_completed_books'

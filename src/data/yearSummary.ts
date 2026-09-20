@@ -1,5 +1,5 @@
 import type { GameState, LogEntry, YearSummary } from '../types/game'
-import type { CareerProject, WriterProject } from '../types/career'
+import type { CareerProject } from '../types/career'
 import { isWriterProject } from '../types/career'
 
 /** 计算所有网文项目累计字数 */
@@ -128,4 +128,36 @@ export function createYearStartSnapshot(state: GameState): GameState['yearStartS
     writerCareerProfile: JSON.parse(JSON.stringify(state.writerCareerProfile)),
     totalWordCount: getTotalWordCount(state.careerProjects),
   }
+}
+
+/**
+ * 年度循环 C 阶段：根据上一年总结决定下一年开局事件链。
+ * 优先级：经济危机 > 身体崩溃 > 一书封神 > 太监阴影 > 完本红利 > 平淡自省。
+ * 返回事件链 id，若无匹配则返回 null。
+ */
+export function determineYearOpeningChain(summary: YearSummary): string | null {
+  const endStats = summary.endStats
+  const completed = summary.stats.completedBooks
+  const abandoned = summary.stats.abandonedBooks
+  const fansDelta = summary.stats.fansDelta
+
+  // 经济危机：存款见底
+  if (endStats.savings <= 0) return 'year_opening_poverty'
+
+  // 身体崩溃：健康过低
+  if (endStats.health <= 40) return 'year_opening_burnout'
+
+  // 一书封神：粉丝大幅增长
+  if (fansDelta >= 5000) return 'year_opening_one_hit'
+
+  // 太监阴影
+  if (abandoned > 0) return 'year_opening_abandon_shadow'
+
+  // 完本红利
+  if (completed > 0) return 'year_opening_complete_bonus'
+
+  // 平淡一年：字没少写但没什么水花
+  if (summary.stats.wordCountDelta >= 30_000) return 'year_opening_middling'
+
+  return null
 }
