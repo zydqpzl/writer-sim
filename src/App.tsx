@@ -12,11 +12,14 @@ import PlatformEcosystemPanel from './components/PlatformEcosystemPanel'
 import AchievementModal from './components/AchievementModal'
 import PlayerStatusPanel from './components/PlayerStatusPanel'
 import WriterProjectPanel from './components/WriterProjectPanel'
+import TopBar from './components/TopBar'
+import AssetStoreModal from './components/AssetStoreModal'
 import YearSummaryModal from './components/YearSummaryModal'
 import { legacyPointsFor } from './data/legacy'
 import type { StartingIdentity } from './data/legacy'
 import type { WriterProject } from './types/career'
 import { isWriterProject } from './types/career'
+import type { ActionDef } from './types/game'
 import {
   ACTIONS,
   PART_TIME_WARNING_LINE,
@@ -77,10 +80,24 @@ export default function App() {
   const [writerWorkOpen, setWriterWorkOpen] = useState(false)
   const [debugOpen, setDebugOpen] = useState(false)
   const [achievementOpen, setAchievementOpen] = useState(false)
+  const [assetStoreOpen, setAssetStoreOpen] = useState(false)
   // 若本地已保存携带卡牌且已有回响，说明上一局已结算但尚未开始新局，优先展示 setup
   const [setupOpen, setSetupOpen] = useState(
     () => legacyProfile.keptCardIds.length > 0 && legacyProfile.totalLegacyPoints > 0,
   )
+
+  // 低频投资/消费动作：住房、装备、培训、保险、公关、身心健康、退休
+  const isAssetAction = (a: ActionDef): boolean => {
+    if (!a.id) return false
+    if (a.id.startsWith('housing_')) return true
+    if (a.id.startsWith('eq_')) return true
+    if (a.id.startsWith('pr_')) return true
+    if (a.id.startsWith('training_')) return true
+    if (a.id.startsWith('insurance_')) return true
+    if (a.id.startsWith('wellness_')) return true
+    if (a.id === 'retire_financial_freedom') return true
+    return false
+  }
 
   // 按当前地点、存款条件与已拥有状态过滤主行动
   const availableActions = ACTIONS.filter((a) => {
@@ -96,54 +113,37 @@ export default function App() {
         state.activeInsuranceIds.includes(a.id))
     // 封笔隐退仅在拥有顶级住房时出现
     const retireHidden = a.id === 'retire_financial_freedom' && state.housingId !== 'housing_villa'
-    return locationOk && savingsOk && projectOk && !alreadyOwned && !retireHidden
+    // 低频投资动作进资产库，不在主面板展示
+    return locationOk && savingsOk && projectOk && !alreadyOwned && !retireHidden && !isAssetAction(a)
   })
+
+  // 资产库动作（含已被过滤掉的已拥有项目，但模态内会再隐藏一次）
+  const assetActions = ACTIONS.filter((a) => {
+    const locationOk = !a.location || a.location === state.location
+    const savingsOk = !a.requirement?.minSavings || state.stats.savings >= a.requirement.minSavings
+    const projectOk = !a.requirement?.needsActiveWriterProject || !!activeProject
+    const retireHidden = a.id === 'retire_financial_freedom' && state.housingId !== 'housing_villa'
+    return isAssetAction(a) && locationOk && savingsOk && projectOk && !retireHidden
+  })
+
   const emergencyAction = getEmergencyAction(state.location)
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-b from-slate-100 to-slate-200/70">
-      {/* 顶栏 */}
-      <header className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3.5">
-          <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-500 text-lg text-white shadow-soft">
-              🐟
-            </span>
-            <div>
-              <h1 className="text-base font-semibold text-slate-800">
-                毕业咸鱼模拟器
-              </h1>
-              <p className="text-xs text-slate-400">
-                Freelancer Survival Simulator
-              </p>
-            </div>
-          </div>
-          <div className="hidden items-center gap-2 sm:flex">
-            <span className="chip bg-brand-50 text-brand-600">60 天试用</span>
-            <span className="chip bg-orange-50 text-orange-600">保命兼职</span>
-            <span className="chip bg-violet-50 text-violet-600">事件链奇遇</span>
-            <button
-              type="button"
-              onClick={() => setAchievementOpen(true)}
-              className="chip bg-amber-50 text-amber-600 transition-colors hover:bg-amber-100"
-            >
-              🏆 成就墙
-            </button>
-            <button
-              type="button"
-              onClick={() => setDebugOpen((v) => !v)}
-              className={[
-                'chip transition-colors',
-                debugOpen
-                  ? 'bg-rose-100 text-rose-600 hover:bg-rose-200'
-                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200',
-              ].join(' ')}
-            >
-              {debugOpen ? '🛠 Debug ON' : '🛠 Debug'}
-            </button>
-          </div>
-        </div>
-      </header>
+    <div className="flex h-screen w-full flex-col overflow-hidden bg-gradient-to-b from-slate-100 to-slate-200/70">
+      <TopBar
+        day={state.day}
+        yearLength={YEAR_LENGTH}
+        slot={state.slot}
+        stats={state.stats}
+        location={state.location}
+        maxEnergy={maxEnergy}
+        maxStress={maxStress}
+        onEmergency={doEmergencyPartTime}
+        onOpenAssetStore={() => setAssetStoreOpen(true)}
+        onOpenAchievements={() => setAchievementOpen(true)}
+        onToggleDebug={() => setDebugOpen((v) => !v)}
+        debugOpen={debugOpen}
+      />
 
       {/* 调试面板：顶栏点🛠展开 */}
       {debugOpen && (
@@ -433,33 +433,20 @@ export default function App() {
         </div>
       )}
 
-      {/* 主体 */}
-      <main className="mx-auto max-w-6xl px-5 py-6">
-        {availableEncounterChain && (
-          <div className="mb-5">
-            <EncounterBanner
-              chain={availableEncounterChain}
-              day={state.day}
-              actionable={!state.actedThisSlot && !state.partTimeLock}
-              blockHint={
-                state.partTimeLock
-                  ? '今日精力被压榨'
-                  : state.actedThisSlot
-                    ? '本时段已行动'
-                    : undefined
-              }
-              onAccept={startEncounter}
+      {/* 主体：P社式固定视口仪表盘 */}
+      <main className="flex-1 overflow-hidden px-4 py-3">
+        <div className="grid h-full grid-cols-1 gap-4 lg:grid-cols-12">
+          {/* 左侧：当前连载（核心面板）+ 作者状态，统一内部滚动 */}
+          <aside className="flex h-full flex-col gap-4 overflow-y-auto pr-1 lg:col-span-3">
+            <WriterProjectPanel
+              project={activeProject}
+              logs={logs}
+              marketTrend={state.marketTrend}
+              authorProfile={authorProfile}
+              onOpenWriterWork={() => setWriterWorkOpen(true)}
             />
-          </div>
-        )}
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-          {/* 左侧：玩家状态栏 + 灵感卡牌背包 + 当前作品 */}
-          <aside className="flex flex-col gap-5 lg:col-span-3">
             <PlayerStatusPanel
               stats={state.stats}
-              day={state.day}
-              yearLength={YEAR_LENGTH}
-              location={state.location}
               pathSnapshot={pathSnapshot}
               warningLine={PART_TIME_WARNING_LINE}
               consecutivePartTimeDays={state.consecutivePartTimeDays}
@@ -468,38 +455,47 @@ export default function App() {
               maxEnergy={maxEnergy}
               maxStress={maxStress}
             />
-            <WriterProjectPanel
-              project={activeProject}
-              logs={logs}
-              marketTrend={state.marketTrend}
-              authorProfile={authorProfile}
-            />
           </aside>
 
-          {/* 中间：每日行动选择 */}
-          <div className="lg:col-span-6">
-            <DayActionPanel
-              state={state}
-              yearLength={YEAR_LENGTH}
-              actions={availableActions}
-              emergencyAction={emergencyAction}
-              warningLine={PART_TIME_WARNING_LINE}
-              realityPunchThreshold={REALITY_PUNCH_THRESHOLD}
-              activeProject={activeProject}
-              onChoose={chooseAction}
-              onStartWork={() => setCreationOpen(true)}
-              onOpenWriterWork={() => setWriterWorkOpen(true)}
-              onEmergency={doEmergencyPartTime}
-              onNext={advance}
-            />
+          {/* 中间：限时奇遇 + 当前时段核心决策 */}
+          <div className="flex h-full flex-col gap-3 overflow-hidden lg:col-span-6">
+            {availableEncounterChain && (
+              <div className="shrink-0">
+                <EncounterBanner
+                  chain={availableEncounterChain}
+                  day={state.day}
+                  actionable={!state.actedThisSlot && !state.partTimeLock}
+                  blockHint={
+                    state.partTimeLock
+                      ? '今日精力被压榨'
+                      : state.actedThisSlot
+                        ? '本时段已行动'
+                        : undefined
+                  }
+                  onAccept={startEncounter}
+                />
+              </div>
+            )}
+            <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+              <DayActionPanel
+                state={state}
+                actions={availableActions}
+                emergencyAction={emergencyAction}
+                warningLine={PART_TIME_WARNING_LINE}
+                realityPunchThreshold={REALITY_PUNCH_THRESHOLD}
+                activeProject={activeProject}
+                onChoose={chooseAction}
+                onStartWork={() => setCreationOpen(true)}
+                onOpenWriterWork={() => setWriterWorkOpen(true)}
+                onEmergency={doEmergencyPartTime}
+                onNext={advance}
+              />
+            </div>
           </div>
 
-          {/* 右侧：游戏日志 + 网文江湖，桌面固定高度内部滚动，避免与主内容重叠 */}
-          <div className="flex flex-col gap-5 lg:col-span-3 lg:sticky lg:top-20 lg:h-[calc(100vh-9rem)] lg:min-h-[480px] lg:overflow-hidden">
-            <div className="h-[420px] lg:h-auto lg:flex-[45] lg:min-h-0">
-              <GameLog logs={logs} />
-            </div>
-            <div className="min-h-[360px] lg:flex-[55] lg:min-h-0">
+          {/* 右侧：网文江湖 + 游戏日志，内部滚动 */}
+          <div className="flex h-full flex-col gap-4 overflow-hidden lg:col-span-3">
+            <div className="flex-[55] min-h-0 overflow-hidden">
               <PlatformEcosystemPanel
                 npcs={state.platformEcosystem.npcs}
                 leaderboards={state.platformEcosystem.leaderboards}
@@ -508,13 +504,12 @@ export default function App() {
                 activeProject={activeProject}
               />
             </div>
+            <div className="flex-[45] min-h-0 overflow-hidden">
+              <GameLog logs={logs} />
+            </div>
           </div>
         </div>
       </main>
-
-      <footer className="mx-auto max-w-6xl px-5 pb-8 pt-2 text-center text-xs text-slate-400">
-        框架演示 · React + Tailwind CSS · 事件链 + 灵感卡牌
-      </footer>
 
       {/* 创作工坊弹窗：放入灵感卡牌 + 赌博转化 */}
       {creationOpen && (
@@ -625,6 +620,16 @@ export default function App() {
           }}
         />
       )}
+
+      {/* 低频大额投资面板（住房 / 装备 / 培训 / 保险 / 公关） */}
+      <AssetStoreModal
+        isOpen={assetStoreOpen}
+        onClose={() => setAssetStoreOpen(false)}
+        state={state}
+        actions={assetActions}
+        activeProject={activeProject}
+        onChoose={chooseAction}
+      />
 
       {/* 二周目开局设置（结算后或本地有待用携带卡时） */}
       {setupOpen && (

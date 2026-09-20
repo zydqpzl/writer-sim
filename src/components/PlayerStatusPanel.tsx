@@ -1,4 +1,4 @@
-import type { PlayerLocation, PlayerStats, PathSnapshot } from '../types/game'
+import type { PlayerStats, PathSnapshot } from '../types/game'
 import type { CardQuality, InspirationCard } from '../types/event'
 
 interface AttrMeta {
@@ -69,9 +69,6 @@ function formatValue(attr: AttrMeta, value: number, maxEnergy: number, maxStress
 
 interface Props {
   stats: PlayerStats
-  day: number
-  yearLength: number
-  location: PlayerLocation
   pathSnapshot: PathSnapshot
   warningLine: number
   consecutivePartTimeDays: number
@@ -89,16 +86,8 @@ const PATH_LABEL: Record<keyof PathSnapshot['scores'], string> = {
   BALANCED: '仍在摸索',
 }
 
-const LOCATION_LABEL: Record<PlayerLocation, { label: string; chip: string; icon: string }> = {
-  city: { label: '大城市', chip: 'bg-brand-50 text-brand-600', icon: '🏙️' },
-  hometown: { label: '老家', chip: 'bg-emerald-50 text-emerald-600', icon: '🏘️' },
-}
-
 export default function PlayerStatusPanel({
   stats,
-  day,
-  yearLength,
-  location,
   pathSnapshot,
   warningLine,
   consecutivePartTimeDays,
@@ -107,9 +96,6 @@ export default function PlayerStatusPanel({
   maxEnergy,
   maxStress,
 }: Props) {
-  const year = Math.ceil(day / yearLength)
-  const dayOfYear = ((day - 1) % yearLength) + 1
-  const progress = Math.round((dayOfYear / yearLength) * 100)
   const isWarning = stats.savings < warningLine
 
   // 按卡牌名聚合计数
@@ -123,40 +109,19 @@ export default function PlayerStatusPanel({
   const cardList = Object.values(grouped)
 
   return (
-    <section className="card p-5">
-      {/* 头部：标题 + 生存进度 */}
-      <header className="mb-5 flex items-center justify-between">
-        <div>
-          <h2 className="text-sm font-semibold tracking-wide text-slate-500">
-            玩家状态
-          </h2>
-          <p className="mt-0.5 text-lg font-semibold text-slate-800">
-            自由职业生存档案
-          </p>
-        </div>
-        <div className="text-right">
-          <span className={`chip ${LOCATION_LABEL[location].chip}`}>
-            {LOCATION_LABEL[location].icon} {LOCATION_LABEL[location].label}
-          </span>
-          <div className="mt-1.5 flex items-center gap-2">
-            <span className="text-sm font-semibold text-slate-700">
-              第 {year} 年 · 第 {dayOfYear} / {yearLength} 天
-            </span>
-          </div>
-          <div className="mt-1.5 h-1.5 w-28 overflow-hidden rounded-full bg-slate-200">
-            <div
-              className="h-full rounded-full bg-brand-500 transition-all duration-500"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-        </div>
+    <section className="card p-4">
+      {/* 头部 */}
+      <header className="mb-3">
+        <h2 className="text-sm font-semibold tracking-wide text-slate-500">
+          作者状态
+        </h2>
       </header>
 
       {/* 存款警戒提示 */}
       {isWarning && (
-        <div className="mb-3 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-          <span className="animate-pulse-soft">🚨</span>
-          <span>存款跌破警戒线（{warningLine} 元），可前往兼职通道跑外卖保命。</span>
+        <div className="mb-2 flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-[11px] text-rose-700">
+          <span>🚨</span>
+          <span>存款跌破警戒线（{warningLine} 元）</span>
         </div>
       )}
 
@@ -164,22 +129,22 @@ export default function PlayerStatusPanel({
       {consecutivePartTimeDays > 0 && (
         <div
           className={[
-            'mb-3 flex items-center gap-2 rounded-xl px-3 py-2 text-xs',
+            'mb-2 flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[11px]',
             consecutivePartTimeDays >= realityPunchThreshold
-              ? 'border border-amber-200 bg-amber-50 text-amber-700'
-              : 'border border-orange-200 bg-orange-50 text-orange-700',
+              ? 'bg-amber-50 text-amber-700'
+              : 'bg-orange-50 text-orange-700',
           ].join(' ')}
         >
           <span>🥊</span>
           <span>
-            连续兼职 {consecutivePartTimeDays} / {realityPunchThreshold} 天，主业停滞
-            {consecutivePartTimeDays >= realityPunchThreshold ? '，现实的铁拳已挥下' : ''}
+            连续兼职 {consecutivePartTimeDays}/{realityPunchThreshold} 天
+            {consecutivePartTimeDays >= realityPunchThreshold ? ' · 现实的铁拳已挥下' : ''}
           </span>
         </div>
       )}
 
       {/* 属性网格 */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-1">
+      <div className="grid grid-cols-2 gap-2">
         {ATTRS.map((attr) => {
           const value = stats[attr.key]
           const isPercent = !!attr.percent
@@ -300,7 +265,7 @@ export default function PlayerStatusPanel({
             尚未收集灵感卡牌。试试「桌游店 DM · 奇遇兼职」触发事件链。
           </p>
         ) : (
-          <ul className="space-y-2">
+          <ul className="max-h-48 space-y-2 overflow-y-auto pr-1 scrollbar-thin">
             {cardList.map(({ card, count }) => {
               const q = QUALITY_STYLE[card.quality]
               return (

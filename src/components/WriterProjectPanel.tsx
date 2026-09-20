@@ -16,6 +16,7 @@ interface WriterProjectPanelProps {
   logs: LogEntry[]
   marketTrend: MarketTrend
   authorProfile: AuthorProfile
+  onOpenWriterWork?: () => void
 }
 
 const STAGE_LABELS: Record<WriterProject['stage'], string> = {
@@ -41,6 +42,7 @@ export default function WriterProjectPanel({
   logs,
   marketTrend,
   authorProfile,
+  onOpenWriterWork,
 }: WriterProjectPanelProps) {
   const recentComments = useMemo(() => {
     return logs
@@ -53,7 +55,24 @@ export default function WriterProjectPanel({
     return (
       <div className="card p-4">
         <h2 className="text-sm font-semibold text-slate-800">当前作品</h2>
-        <p className="mt-2 text-xs text-slate-400">暂无进行中的写作项目。</p>
+        <p className="mt-1 text-xs text-slate-400">暂无进行中的写作项目。</p>
+        <button
+          type="button"
+          onClick={onOpenWriterWork}
+          className="mt-4 flex w-full flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-brand-300 bg-brand-50/50 px-4 py-6 text-left transition-colors hover:border-brand-400 hover:bg-brand-50"
+        >
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-100 text-xl text-brand-600">
+            +
+          </span>
+          <div className="text-center">
+            <div className="text-sm font-semibold text-brand-700">
+              开启全新商业连载
+            </div>
+            <div className="mt-0.5 text-xs text-brand-600/80">
+              选择平台、题材与文风，开始你的网文之路
+            </div>
+          </div>
+        </button>
       </div>
     )
   }
