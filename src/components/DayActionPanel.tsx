@@ -135,6 +135,36 @@ export default function DayActionPanel({
         )}
       </header>
 
+      {/* 核心写作入口：独立于行动网格之外 */}
+      <button
+        type="button"
+        disabled={actedThisSlot}
+        onClick={onOpenWriterWork}
+        className={[
+          'mb-3 flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all',
+          actedThisSlot
+            ? 'cursor-not-allowed border-slate-200 bg-slate-50 opacity-60'
+            : activeProject
+              ? 'border-brand-200 bg-brand-50/60 hover:border-brand-300 hover:bg-brand-50'
+              : 'border-brand-300 bg-brand-100/60 hover:bg-brand-100',
+        ].join(' ')}
+      >
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-xl text-brand-600 shadow-sm">
+          {activeProject ? '✍️' : '+'}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold text-slate-800">
+            {activeProject ? `写作 / 更新《${activeProject.title}》` : '开启全新商业连载'}
+          </div>
+          <div className="text-[11px] text-slate-500">
+            {activeProject
+              ? `${(activeProject.wordCount / 10000).toFixed(1)} 万字 · ${activeProject.totalChapters} 章 · 追读 ${(activeProject.readerRetention * 100).toFixed(1)}%`
+              : '选择平台、题材与文风，迈出网文第一步'}
+          </div>
+        </div>
+        <span className="shrink-0 text-brand-600">→</span>
+      </button>
+
       {/* 高频日常动作：紧凑 3 列网格 */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         {actions.map((action) => {
@@ -206,44 +236,6 @@ export default function DayActionPanel({
           )
         })}
 
-        {/* 写作/开书核心入口 */}
-        <button
-          type="button"
-          disabled={actedThisSlot}
-          onClick={onOpenWriterWork}
-          className={[
-            'group relative flex flex-col gap-2 rounded-xl border p-3 text-left transition-all',
-            actedThisSlot
-              ? 'cursor-not-allowed border-slate-200 bg-slate-50 opacity-60'
-              : 'border-brand-200 bg-brand-50/40 hover:border-brand-300 hover:bg-brand-50/70',
-          ].join(' ')}
-        >
-          <div className="flex items-center gap-2">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-100 text-lg text-brand-600">
-              ✍️
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="text-xs font-semibold leading-tight text-slate-800">
-                {activeProject ? '写作 / 更新' : '开一本新书'}
-              </div>
-              <div className="mt-0.5 line-clamp-2 text-[10px] leading-snug text-slate-500">
-                {activeProject
-                  ? `推进《${activeProject.title}》`
-                  : '选择平台开始连载'}
-              </div>
-            </div>
-          </div>
-          {activeProject && (
-            <div className="flex flex-wrap gap-1">
-              <span className="chip bg-white text-brand-600 text-[10px] ring-1 ring-inset ring-brand-200/70">
-                {(activeProject.wordCount / 10000).toFixed(1)} 万字
-              </span>
-              <span className="chip bg-white text-brand-600 text-[10px] ring-1 ring-inset ring-brand-200/70">
-                {activeProject.totalChapters} 章
-              </span>
-            </div>
-          )}
-        </button>
       </div>
 
       {/* 兼职通道 + 推进：底部固定栏 */}

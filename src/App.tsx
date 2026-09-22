@@ -10,8 +10,7 @@ import GameLog from './components/GameLog'
 import LegacySetupModal from './components/LegacySetupModal'
 import PlatformEcosystemPanel from './components/PlatformEcosystemPanel'
 import AchievementModal from './components/AchievementModal'
-import PlayerStatusPanel from './components/PlayerStatusPanel'
-import WriterProjectPanel from './components/WriterProjectPanel'
+import AuthorArchivePanel from './components/AuthorArchivePanel'
 import TopBar from './components/TopBar'
 import AssetStoreModal from './components/AssetStoreModal'
 import YearSummaryModal from './components/YearSummaryModal'
@@ -436,24 +435,17 @@ export default function App() {
       {/* 主体：P社式固定视口仪表盘 */}
       <main className="flex-1 overflow-hidden px-4 py-3">
         <div className="grid h-full grid-cols-1 gap-4 lg:grid-cols-12">
-          {/* 左侧：当前连载（核心面板）+ 作者状态，统一内部滚动 */}
+          {/* 左侧：个人档案式面板（核心状态 + 当前作品 + 生涯数据） */}
           <aside className="flex h-full flex-col gap-4 overflow-y-auto pr-1 lg:col-span-3">
-            <WriterProjectPanel
-              project={activeProject}
-              logs={logs}
-              marketTrend={state.marketTrend}
-              authorProfile={authorProfile}
-              onOpenWriterWork={() => setWriterWorkOpen(true)}
-            />
-            <PlayerStatusPanel
+            <AuthorArchivePanel
               stats={state.stats}
+              activeProject={activeProject}
+              writerCareerProfile={state.writerCareerProfile}
               pathSnapshot={pathSnapshot}
-              warningLine={PART_TIME_WARNING_LINE}
-              consecutivePartTimeDays={state.consecutivePartTimeDays}
-              realityPunchThreshold={REALITY_PUNCH_THRESHOLD}
               inventory={state.inventory}
               maxEnergy={maxEnergy}
               maxStress={maxStress}
+              onOpenWriterWork={() => setWriterWorkOpen(true)}
             />
           </aside>
 
