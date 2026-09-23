@@ -317,6 +317,36 @@ export interface WordOfMouthPool {
   activeEvangelists: number
 }
 
+/** 作品成绩预估带：P20 / P50 / P80 */
+export interface PerformanceForecast {
+  /** 保守预估 P20 */
+  conservative: number
+  /** 中位预估 P50 */
+  median: number
+  /** 乐观预估 P80 */
+  optimistic: number
+  /** 开书时的 executionGap = 复杂度 - 掌控力 */
+  executionGap: number
+  /** 开书时主题材掌握度 */
+  initialMastery: number
+  /** 开书时作者掌控力快照 */
+  initialExecution: number
+  /** 开书时中位预估对应的原始算法分（用于实绩计算） */
+  baselineScore: number
+}
+
+/** 预估偏差结果 */
+export interface ForecastDeviation {
+  /** 实绩分数 */
+  actual: number
+  /** 偏差百分比（相对中位预估） */
+  deviationPct: number
+  /** 落点分类 */
+  outcome: 'within' | 'overperform' | 'underperform'
+  /** 文字标签 */
+  label: string
+}
+
 /** 单题材掌握度 */
 export interface GenreMastery {
   genre: MainGenre
@@ -443,6 +473,21 @@ export interface WriterProject extends CareerProject {
     copyright: boolean
     payback: boolean
   }
+
+  /** 开书时的成绩预估带 */
+  performanceForecast?: PerformanceForecast
+  /** 结书/太监时的实绩分数 */
+  actualPerformance?: number
+  /** 实绩相对预估带的偏差结果 */
+  forecastDeviation?: ForecastDeviation
+  /** 预估带是否已被中途掌握度跃迁或意外事件撑破 */
+  forecastInvalidated: boolean
+  /** 预估带失效原因（用于日志/成就） */
+  forecastInvalidationReason?: string
+  /** 累计意外冲击修正（可正可负） */
+  accidentShock: number
+  /** 厚尾运气累计 */
+  fatTailLuck: number
 }
 
 /** 判断一个项目是否为网文项目 */

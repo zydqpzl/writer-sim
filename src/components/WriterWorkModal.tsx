@@ -16,6 +16,7 @@ import {
   computeBackgroundBonuses,
   computeExecutionCapacity,
   computeNovelComplexity,
+  computePerformanceForecast,
   determineGrowthCurve,
 } from '../engine/careerEngine'
 import { computeAlgorithmMatchScore } from '../engine/platformEngine'
@@ -31,6 +32,7 @@ import type {
   WriterProject,
   WritingInspiration,
 } from '../types/career'
+import type { GameState } from '../types/game'
 import type { NovelPlatform, NovelPlatformId } from '../types/platform'
 
 type SetupMode = 'custom' | 'random' | 'trend'
@@ -194,15 +196,23 @@ export default function WriterWorkModal({
 
   const preview = useMemo(() => computeDraftPreview(draft), [draft])
   const complexityPreview = useMemo(() => computeNovelComplexity(draft), [draft])
-  const executionPreview = useMemo(
+  const previewState = useMemo<GameState>(
     () =>
-      computeExecutionCapacity(draft, {
+      ({
         writerCareerProfile,
         authorProfile,
         authorRank: 'COLT',
         stats: { stress: 130, health: 80 },
-      } as unknown as import('../types/game').GameState),
-    [draft, writerCareerProfile, authorProfile],
+      }) as unknown as GameState,
+    [writerCareerProfile, authorProfile],
+  )
+  const executionPreview = useMemo(
+    () => computeExecutionCapacity(draft, previewState),
+    [draft, previewState],
+  )
+  const forecastPreview = useMemo(
+    () => computePerformanceForecast(draft, previewState, selectedPlatform, marketTrend),
+    [draft, previewState, selectedPlatform, marketTrend],
   )
   const executionCheckPreview = useMemo(
     () => checkExecutionCapacity(complexityPreview, executionPreview),
@@ -603,38 +613,40 @@ export default function WriterWorkModal({
                 </div>
                 <div className="grid grid-cols-3 gap-3 text-center">
                   <div className="rounded-lg bg-white p-2">
-                    <div className="text-xs text-slate-400">预估质量</div>
+                    <div className="text-xs text-slate-400">保守预估 P20</div>
                     <div className="text-sm font-semibold text-slate-700">
-                      {boostedPreview.quality}
-                      {boostedPreview.quality !== preview.quality && (
-                        <span className="ml-1 text-[10px] text-emerald-600">
-                          +{boostedPreview.quality - preview.quality}
-                        </span>
-                      )}
+                      {forecastPreview.conservative}
                     </div>
                   </div>
                   <div className="rounded-lg bg-white p-2">
-                    <div className="text-xs text-slate-400">预估商业</div>
-                    <div className="text-sm font-semibold text-slate-700">
-                      {boostedPreview.commerciality}
-                      {boostedPreview.commerciality !== preview.commerciality && (
-                        <span className="ml-1 text-[10px] text-emerald-600">
-                          +{boostedPreview.commerciality - preview.commerciality}
-                        </span>
-                      )}
+                    <div className="text-xs text-slate-400">中位预估 P50</div>
+                    <div className="text-sm font-semibold text-brand-700">
+                      {forecastPreview.median}
                     </div>
                   </div>
                   <div className="rounded-lg bg-white p-2">
-                    <div className="text-xs text-slate-400">预估爆点</div>
+                    <div className="text-xs text-slate-400">乐观预估 P80</div>
                     <div className="text-sm font-semibold text-slate-700">
-                      {boostedPreview.memeValue}
-                      {boostedPreview.memeValue !== preview.memeValue && (
-                        <span className="ml-1 text-[10px] text-emerald-600">
-                          +{boostedPreview.memeValue - preview.memeValue}
-                        </span>
-                      )}
+                      {forecastPreview.optimistic}
                     </div>
                   </div>
+                </div>
+                <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500">
+                  <span>
+                    掌控差距 {forecastPreview.executionGap} · 带宽{' '}
+                    {forecastPreview.optimistic - forecastPreview.conservative}
+                  </span>
+                  <span className="text-slate-400">带外将记入评测偏差</span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-slate-500">
+                  <span>质量 {boostedPreview.quality}</span>
+                  <span>商业 {boostedPreview.commerciality}</span>
+                  <span>爆点 {boostedPreview.memeValue}</span>
+                  {(boostedPreview.quality !== preview.quality ||
+                    boostedPreview.commerciality !== preview.commerciality ||
+                    boostedPreview.memeValue !== preview.memeValue) && (
+                    <span className="text-emerald-600">履历加成已生效</span>
+                  )}
                 </div>
 
                 {/* 履历与题材化学反应 */}

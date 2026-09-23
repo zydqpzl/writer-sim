@@ -1953,7 +1953,7 @@ export function useGame(initialSetup?: StartSetup) {
               newBookBoostBonus: currentRank.newBookBoostBonus,
               fullAttendanceBonus: currentRank.fullAttendanceBonus,
               contractDifficultyModifier: currentRank.contractDifficultyModifier,
-            })
+            }, state)
             ticked.push(result.project)
             careerSavingsDelta += result.playerDelta.savings ?? 0
             careerFansDelta += result.playerDelta.fans ?? 0

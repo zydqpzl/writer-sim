@@ -129,6 +129,86 @@ export const ACHIEVEMENTS: GameAchievement[] = [
     metaBonus: '下一局初始存款 +3000',
     metaBonusValue: { startingSavingsDelta: 3000 },
   },
+
+  // ===== 评测偏差成就 =====
+  {
+    id: 'forecast_overtime',
+    title: '【评测组加班】',
+    description: '单本实绩 ≥ 开书乐观预估 × 1.5。开书面板那三个数，建议当天气看。',
+    icon: '📊',
+    hint: '让一本书的实绩飞出乐观预估带 50% 以上。',
+  },
+  {
+    id: 'i_am_the_variable',
+    title: '【我是变量】',
+    description: '单局累计 3 本书飞出预估带（上或下都算）。模型里没你这个人。',
+    icon: '🎲',
+    hint: '单局内 3 本书实绩落在预估带外。',
+    metaBonus: '下一局隐藏运气微幅 +',
+    metaBonusValue: { startingSkillDelta: { marketInsight: 2 } },
+  },
+  {
+    id: 'should_not_fire',
+    title: '【这本不该火】',
+    description: 'executionGap ≥ 25 的硬开超纲书，却签约且实绩 > 中位预估。读者不读公式。',
+    icon: '🐉',
+    hint: '高难度硬开的书最终超过中位预估。',
+    metaBonus: '下一局该题材掌握度开局 +2',
+    metaBonusValue: { startingSkillDelta: { structure: 2 } },
+  },
+  {
+    id: 'bronze_king',
+    title: '【青铜面板，王者结算】',
+    description: '开书中位预估偏低，结书进入当月前 10%。系统给 underestimated 这个词加了注释。',
+    icon: '🥉',
+    hint: '低预估书最终进入头部 10%。',
+  },
+  {
+    id: 'illegal_breakthrough',
+    title: '【开窍速度违规】',
+    description: '单本内主题材掌握度 +≥12，且实绩 > 开书乐观预估。学习曲线被你踩断了。',
+    icon: '💡',
+    hint: '一本书连载期间掌握度大幅跃升并飞出乐观带。',
+    metaBonus: '下一局读书/查资料收益 +10%',
+    metaBonusValue: { startingSkillDelta: { marketInsight: 2, prose: 1 } },
+  },
+  {
+    id: 'stable_jpg',
+    title: '【稳了.jpg】',
+    description: '开书乐观预估进入爆款档，最终太监或实绩 < 保守预估。乐观预估 100 不是承诺函。',
+    icon: '📉',
+    hint: '高预估书最终崩盘或太监。',
+  },
+  {
+    id: 'theory_rich',
+    title: '【理论很丰满】',
+    description: 'authorControl 高于复杂度 ≥ 15，仍扑街/太监。掌握度很好，成绩很差。',
+    icon: '🧪',
+    hint: '舒适区硬实力碾压却最终扑街。',
+  },
+  {
+    id: 'full_gear_white_ending',
+    title: '【满配开局，白板结局】',
+    description: '舒适区 + 系统/爽文（客观不难），中途崩盘。三个标签不该难，人可以自己难。',
+    icon: '⚪',
+    hint: '低难度舒适区书最终崩盘。',
+  },
+  {
+    id: 'editor_was_wrong',
+    title: '【编辑看走眼】',
+    description: '系统判定过审概率低却签约，或稳过被卡后仍靠别的路活下来。审稿也是随机变量。',
+    icon: '👓',
+    hint: '签约结果与系统预判相反。',
+  },
+  {
+    id: 'black_red_is_red',
+    title: '【黑红也是红】',
+    description: '因负面事件流量暴涨，成绩 > 乐观预估，但名声另计。公式只算点击，不算体面。',
+    icon: '🎭',
+    hint: '靠黑红争议飞出乐观预估带。',
+    metaBonus: '下一局黑粉回响（有代价）',
+    metaBonusValue: { startingSkillDelta: { marketInsight: 3 } },
+  },
 ]
 
 /** 按 id 索引成就 */
@@ -199,6 +279,103 @@ export function checkNewAchievements(
   grantIf('rent_to_villa', state.housingId === 'housing_villa')
   grantIf('hundred_k', state.stats.fans >= 100_000)
   grantIf('big_v', state.stats.fans >= 1_000_000)
+
+  // ===== 评测偏差成就判定 =====
+  const finishedProjects = writerProjects.filter(
+    (p) => (p.stage === 'COMPLETED' || p.stage === 'ABANDONED') && p.performanceForecast,
+  )
+
+  grantIf(
+    'forecast_overtime',
+    finishedProjects.some(
+      (p) =>
+        p.actualPerformance !== undefined &&
+        p.actualPerformance >= p.performanceForecast!.optimistic * 1.5,
+    ),
+  )
+
+  grantIf(
+    'i_am_the_variable',
+    finishedProjects.filter((p) => p.forecastDeviation?.outcome !== 'within').length >= 3,
+  )
+
+  grantIf(
+    'should_not_fire',
+    finishedProjects.some(
+      (p) =>
+        p.performanceForecast!.executionGap >= 25 &&
+        p.signed &&
+        (p.actualPerformance ?? 0) > p.performanceForecast!.median,
+    ),
+  )
+
+  grantIf(
+    'bronze_king',
+    finishedProjects.some(
+      (p) =>
+        p.performanceForecast!.median <= 50 &&
+        (p.actualPerformance ?? 0) >= 80,
+    ),
+  )
+
+  grantIf(
+    'illegal_breakthrough',
+    finishedProjects.some(
+      (p) =>
+        p.forecastInvalidated &&
+        (p.actualPerformance ?? 0) > p.performanceForecast!.optimistic,
+    ),
+  )
+
+  grantIf(
+    'stable_jpg',
+    finishedProjects.some(
+      (p) =>
+        p.performanceForecast!.optimistic >= 80 &&
+        (p.stage === 'ABANDONED' ||
+          (p.actualPerformance ?? 0) < p.performanceForecast!.conservative),
+    ),
+  )
+
+  grantIf(
+    'theory_rich',
+    finishedProjects.some(
+      (p) =>
+        p.performanceForecast!.initialExecution >= p.complexity.score + 15 &&
+        (p.stage === 'ABANDONED' ||
+          (p.actualPerformance ?? 0) < p.performanceForecast!.conservative),
+    ),
+  )
+
+  grantIf(
+    'full_gear_white_ending',
+    finishedProjects.some(
+      (p) =>
+        p.performanceForecast!.executionGap <= 10 &&
+        p.tags.some((t) => t === 'system' || t === 'cool_story') &&
+        (p.stage === 'ABANDONED' ||
+          (p.actualPerformance ?? 0) < p.performanceForecast!.conservative),
+    ),
+  )
+
+  grantIf(
+    'editor_was_wrong',
+    writerProjects.some(
+      (p) =>
+        p.performanceForecast &&
+        ((p.performanceForecast.baselineScore < 50 && p.signed) ||
+          (p.performanceForecast.baselineScore >= 70 && !p.signed && p.wordCount >= 50_000)),
+    ),
+  )
+
+  grantIf(
+    'black_red_is_red',
+    finishedProjects.some(
+      (p) =>
+        (p.accidentShock ?? 0) < -0.1 &&
+        (p.actualPerformance ?? 0) > p.performanceForecast!.optimistic,
+    ),
+  )
 
   return unlocked
 }

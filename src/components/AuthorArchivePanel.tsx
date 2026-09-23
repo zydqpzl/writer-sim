@@ -252,6 +252,59 @@ export default function AuthorArchivePanel({
               </span>
             </div>
 
+            {activeProject.performanceForecast && (
+              <div className="rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">评测预估带</span>
+                  {activeProject.forecastInvalidated && (
+                    <span className="chip bg-amber-100 text-amber-700 text-[10px]">
+                      已失效 / 已重算
+                    </span>
+                  )}
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-1.5 font-medium">
+                  <span className="text-slate-700">
+                    {activeProject.performanceForecast.conservative}–
+                    {activeProject.performanceForecast.median}–
+                    {activeProject.performanceForecast.optimistic}
+                  </span>
+                  {activeProject.actualPerformance !== undefined ? (
+                    <>
+                      <span className="text-slate-400">→</span>
+                      <span
+                        className={
+                          activeProject.forecastDeviation?.outcome === 'overperform'
+                            ? 'text-emerald-600'
+                            : activeProject.forecastDeviation?.outcome === 'underperform'
+                              ? 'text-rose-600'
+                              : 'text-slate-700'
+                        }
+                      >
+                        实绩 {activeProject.actualPerformance}
+                      </span>
+                      {activeProject.forecastDeviation && (
+                        <span
+                          className={
+                            activeProject.forecastDeviation.outcome === 'overperform'
+                              ? 'text-emerald-600'
+                              : activeProject.forecastDeviation.outcome === 'underperform'
+                                ? 'text-rose-600'
+                                : 'text-slate-500'
+                          }
+                        >
+                          ({activeProject.forecastDeviation.deviationPct > 0 ? '+' : ''}
+                          {activeProject.forecastDeviation.deviationPct}% ·{' '}
+                          {activeProject.forecastDeviation.label})
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-slate-400">带外将记入评测偏差</span>
+                  )}
+                </div>
+              </div>
+            )}
+
             <button
               type="button"
               onClick={onOpenWriterWork}

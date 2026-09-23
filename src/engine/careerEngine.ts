@@ -12,13 +12,16 @@ import type {
   CareerDailyResult,
   ComplexityTier,
   ExecutionCheckResult,
+  ForecastDeviation,
   GenreMastery,
   GrowthCurveType,
   InspirationApplyResult,
   MainGenre,
+  MarketTrend,
   MemeGenerateResult,
   NovelComplexity,
   NovelStyleTrait,
+  PerformanceForecast,
   ProjectPhase,
   WordOfMouthPool,
   WriterAction,
@@ -501,6 +504,231 @@ export function checkExecutionCapacity(
   }
 }
 
+/* ============================================================
+ * 成绩预估带：P20 / P50 / P80
+ * ============================================================ */
+
+/** 估算作品的基准成绩分（0-100+，可超出） */
+function computeBaselinePerformanceScore(
+  draft: BookCreationDraft,
+  complexity: NovelComplexity,
+  platform: NovelPlatform,
+  trend?: MarketTrend,
+): number {
+  const genre = GENRE_BY_ID[draft.genre]
+  const tags = draft.tags.map((id) => BOOK_TAG_BY_ID[id]).filter(Boolean)
+  const gimmick = GIMMICK_BY_ID[draft.gimmick]
+
+  const avgTagCommercialityMod =
+    tags.reduce((s, t) => s + t.commercialityModifier, 0) / Math.max(1, tags.length)
+  const avgTagMeme =
+    tags.reduce((s, t) => s + t.memePotential, 0) / Math.max(1, tags.length)
+  const avgTagRisk =
+    tags.reduce((s, t) => s + t.riskFactor, 0) / Math.max(1, tags.length)
+  const risk = (avgTagRisk + (gimmick?.riskFactor ?? 30)) / 2
+
+  // 质量、商业、爆点的加权合成
+  const quality = clamp(
+    42 +
+      (genre.qualityWeight - 1) * 25 +
+      ((gimmick?.qualityModifier ?? 1) - 1) * 20,
+    0,
+    100,
+  )
+  const commerciality = clamp(
+    genre.baseCommerciality *
+      (avgTagCommercialityMod || 1) *
+      (gimmick?.commercialityModifier ?? 1) *
+      (1 - risk / 250),
+    0,
+    100,
+  )
+  const memeValue = clamp(
+    genre.baseMemePotential * 0.55 + avgTagMeme * 0.55 + (gimmick?.memePotential ?? 50) * 0.5,
+    0,
+    100,
+  )
+
+  // 平台算法契合度
+  const fakeProject = {
+    quality,
+    commerciality,
+    memeValue,
+    genre: draft.genre,
+    tags: draft.tags,
+    gimmick: draft.gimmick,
+    blackHorseTriggered: risk >= 50 && memeValue >= 60,
+  } as unknown as WriterProject
+  const platformMatch = computeAlgorithmMatchScore(fakeProject, platform, trend)
+
+  // 黑马潜能有额外上限
+  const blackHorseBonus = risk >= 50 && memeValue >= 60 ? 8 : 0
+
+  // 复杂度惩罚：过难的书在没掌控力时baseline会被压低
+  const complexityPenalty = complexity.score > 70 ? (complexity.score - 70) * 0.3 : 0
+
+  return clamp(
+    commerciality * 0.4 +
+      memeValue * 0.3 +
+      quality * 0.2 +
+      platformMatch * 0.1 +
+      blackHorseBonus -
+      complexityPenalty,
+    5,
+    120,
+  )
+}
+
+/** 计算开书时的成绩预估带 */
+export function computePerformanceForecast(
+  draft: BookCreationDraft,
+  state: GameState,
+  platform: NovelPlatform,
+  trend?: MarketTrend,
+): PerformanceForecast {
+  const complexity = computeNovelComplexity(draft)
+  const execution = computeExecutionCapacity(draft, state)
+  const gap = Math.max(0, complexity.score - execution)
+  const baselineScore = computeBaselinePerformanceScore(draft, complexity, platform, trend)
+
+  // 中位预估：作者当前水平下最可能达到的成绩
+  const median = clamp(baselineScore, 5, 100)
+
+  // 带宽随 executionGap 变宽：舒适区窄（±10），超纲宽（±40+）
+  const halfWidth = 10 + gap * 0.7
+
+  // P20 / P80：不对称，偏向下限更保守
+  const conservative = clamp(median - halfWidth * 1.2, 0, 100)
+  const optimistic = clamp(median + halfWidth * 0.9, 0, 130)
+
+  const mastery = state.writerCareerProfile.genreMastery[draft.genre]
+
+  return {
+    conservative: Math.round(conservative),
+    median: Math.round(median),
+    optimistic: Math.round(optimistic),
+    executionGap: Math.round(gap),
+    initialMastery: mastery?.proficiency ?? 0,
+    initialExecution: Math.round(execution),
+    baselineScore: Math.round(baselineScore),
+  }
+}
+
+/** 根据项目最终状态计算实绩分数 */
+export function computeActualPerformance(project: WriterProject): number {
+  // 收益/粉丝/阅读量转为 0-100 量纲
+  const revenueScore = Math.min(100, project.stats.totalRevenue / 800)
+  const fanScore = Math.min(100, project.stats.totalFansGained / 400)
+  const viewScore = Math.min(100, project.metrics.viewsOrReaders / 8_000)
+
+  // 三维终值
+  const finalValueScore =
+    project.commerciality * 0.25 +
+    project.memeValue * 0.2 +
+    project.quality * 0.15
+
+  // 追读与读者情绪修正
+  const retentionScore = project.readerRetention * 40
+  const moodScore = clamp(project.readerMood / 100, -1, 1) * 10
+
+  // 意外与厚尾已在发酵过程中体现为收益/热度，这里直接读取结果
+  const raw =
+    finalValueScore +
+    revenueScore * 0.35 +
+    fanScore * 0.15 +
+    viewScore * 0.05 +
+    retentionScore * 0.05 +
+    moodScore
+
+  return Math.round(clamp(raw, 0, 250))
+}
+
+/** 计算实绩相对预估带的偏差 */
+export function computeForecastDeviation(
+  forecast: PerformanceForecast,
+  actual: number,
+): ForecastDeviation {
+  const deviationPct = forecast.median > 0 ? (actual - forecast.median) / forecast.median : 0
+
+  if (actual > forecast.optimistic) {
+    return {
+      actual,
+      deviationPct: Math.round(deviationPct * 100),
+      outcome: 'overperform',
+      label: deviationPct >= 0.5 ? '超模' : '超预期',
+    }
+  }
+  if (actual < forecast.conservative) {
+    return {
+      actual,
+      deviationPct: Math.round(deviationPct * 100),
+      outcome: 'underperform',
+      label: deviationPct <= -0.5 ? '崩盘' : '低于预期',
+    }
+  }
+  return {
+    actual,
+    deviationPct: Math.round(deviationPct * 100),
+    outcome: 'within',
+    label: '误差范围内',
+  }
+}
+
+/** 检测中途掌握度跃迁是否撑破预估带 */
+export function checkForecastInvalidation(
+  project: WriterProject,
+  state: GameState,
+): { invalidated: boolean; reason?: string } {
+  if (!project.performanceForecast) return { invalidated: false }
+  if (project.forecastInvalidated) return { invalidated: true, reason: project.forecastInvalidationReason }
+
+  const currentMastery = state.writerCareerProfile.genreMastery[project.genre]?.proficiency ?? 0
+  const masteryDelta = currentMastery - project.performanceForecast.initialMastery
+  const currentExecution = computeExecutionCapacity(
+    { genre: project.genre, tags: project.tags, gimmick: project.gimmick } as BookCreationDraft,
+    state,
+  )
+  const gapDelta = project.performanceForecast.executionGap - Math.max(0, project.complexity.score - currentExecution)
+
+  if (masteryDelta >= 12 && gapDelta >= 15) {
+    return {
+      invalidated: true,
+      reason: `单本内${GENRE_BY_ID[project.genre].name}掌握度跃升 +${masteryDelta}，预估带失效`,
+    }
+  }
+  return { invalidated: false }
+}
+
+/** 给项目附加一次意外冲击（事件调用） */
+export function applyAccidentShock(
+  project: WriterProject,
+  shock: number,
+  reason: string,
+): { project: WriterProject; log: string } {
+  const nextAccident = clamp((project.accidentShock ?? 0) + shock, -0.8, 0.8)
+  return {
+    project: { ...project, accidentShock: nextAccident },
+    log: `《${project.title}》${reason}，意外冲击 ${shock > 0 ? '+' : ''}${Math.round(shock * 100)}%。`,
+  }
+}
+
+/** 尝试厚尾运气（极少触发，由每日发酵调用） */
+export function tryFatTailLuck(
+  project: WriterProject,
+  rng: () => number = Math.random,
+): { project: WriterProject; log?: string } {
+  if ((project.fatTailLuck ?? 0) > 0) return { project }
+
+  // 每年最多 1-2 次：书中期限内（按 60 天一年）约 2% 单日概率
+  if (rng() > 0.02) return { project }
+
+  const luck = randomRange([0.5, 1.5], rng)
+  return {
+    project: { ...project, fatTailLuck: luck },
+    log: `《${project.title}》撞上极低概率事件，流量曲线出现不科学的跳升。`,
+  }
+}
+
 /** 判定作品生长曲线 */
 export function determineGrowthCurve(
   draft: BookCreationDraft,
@@ -833,6 +1061,16 @@ export function createWriterProject(
     : 35
   const growthCurve = determineGrowthCurve(draft, complexity, draft.styleTraits)
 
+  // 生成成绩预估带（需要 platform 与 trend）
+  const performanceForecast = input.state
+    ? computePerformanceForecast(
+        draft,
+        input.state,
+        PLATFORMS[input.platformId],
+        input.state.marketTrend,
+      )
+    : undefined
+
   let project: WriterProject = {
     id: `writer_${Date.now()}_${Math.floor(rng() * 1000)}`,
     professionType: 'WRITER',
@@ -894,6 +1132,10 @@ export function createWriterProject(
       copyright: false,
       payback: false,
     },
+    performanceForecast,
+    forecastInvalidated: false,
+    accidentShock: 0,
+    fatTailLuck: 0,
   }
 
   // 应用全局履历效果（初始粉丝、追读修正、隐患等）
@@ -1315,6 +1557,7 @@ export function dailyTickWriter(
     fullAttendanceBonus?: number
     contractDifficultyModifier?: number
   } = {},
+  state?: GameState,
 ): CareerDailyResult {
   // 完结/太监项目不再主动发酵，只保留余热或惩罚
   if (project.stage === 'COMPLETED') {
@@ -1535,6 +1778,46 @@ export function dailyTickWriter(
   // 14. 重置今日字数
   next.dailyWordCount = 0
 
+  // 15. 尝试厚尾运气（每年 1-2 次的真黑天鹅）
+  const fatTail = tryFatTailLuck(next, rng)
+  if (fatTail.log) logs.push(fatTail.log)
+  next = fatTail.project
+
+  // 16. 检测预估带是否被中途成长/意外撑破
+  if (state && next.performanceForecast && !next.forecastInvalidated) {
+    const currentExecution = computeExecutionCapacity(
+      { genre: next.genre, tags: next.tags, gimmick: next.gimmick } as BookCreationDraft,
+      {
+        ...state,
+        writerCareerProfile: {
+          ...state.writerCareerProfile,
+          genreMastery: {
+            ...state.writerCareerProfile.genreMastery,
+            [next.genre]: {
+              ...state.writerCareerProfile.genreMastery[next.genre],
+              totalWordCount:
+                state.writerCareerProfile.genreMastery[next.genre].totalWordCount + next.wordCount,
+            },
+          },
+        },
+      } as GameState,
+    )
+    const gapDelta =
+      next.performanceForecast.executionGap -
+      Math.max(0, next.complexity.score - currentExecution)
+    const currentMastery = state.writerCareerProfile.genreMastery[next.genre]?.proficiency ?? 0
+    const masteryDelta = currentMastery - next.performanceForecast.initialMastery
+
+    if (masteryDelta >= 12 || gapDelta >= 15) {
+      next.forecastInvalidated = true
+      next.forecastInvalidationReason =
+        masteryDelta >= 12
+          ? `单本内${GENRE_BY_ID[next.genre].name}掌握度跃升 +${masteryDelta}，预估带失效`
+          : '作者掌控力大幅提升，旧预估带已无法框定这本书'
+      logs.push(`评测组提示：${next.forecastInvalidationReason}`)
+    }
+  }
+
   const playerDelta: CareerDailyResult['playerDelta'] = {
     savings: revenue + fullAttendanceReward,
     fans: newFans,
@@ -1554,25 +1837,35 @@ export function dailyTickWriter(
 export function completeWriterProject(
   project: WriterProject,
   _currentDay: number,
-): { project: WriterProject; log: string } {
-  const next: WriterProject = {
+): { project: WriterProject; log: string; deviation?: ForecastDeviation } {
+  let next: WriterProject = {
     ...project,
     stage: 'COMPLETED',
     phase: 'COMPLETED',
     readerMood: clamp(project.readerMood + 20, -100, 100),
   }
-  return {
-    project: next,
-    log: `《${next.title}》正式完结！读者含泪告别，作品进入长尾余热阶段。`,
-  }
+
+  // 结书实绩与预估带对比
+  const actual = computeActualPerformance(next)
+  next.actualPerformance = actual
+  const deviation = next.performanceForecast
+    ? computeForecastDeviation(next.performanceForecast, actual)
+    : undefined
+  next.forecastDeviation = deviation
+
+  const log = deviation
+    ? `《${next.title}》正式完结！读者含泪告别。开书预估 ${next.performanceForecast!.conservative}–${next.performanceForecast!.median}–${next.performanceForecast!.optimistic}，结书实绩 ${actual}【${deviation.label}，偏差 ${deviation.deviationPct > 0 ? '+' : ''}${deviation.deviationPct}%】。`
+    : `《${next.title}》正式完结！读者含泪告别，作品进入长尾余热阶段。`
+
+  return { project: next, log, deviation }
 }
 
 /** 太监一本书 */
 export function abandonWriterProject(
   project: WriterProject,
   _currentDay: number,
-): { project: WriterProject; log: string; stressDelta: number } {
-  const next: WriterProject = {
+): { project: WriterProject; log: string; stressDelta: number; deviation?: ForecastDeviation } {
+  let next: WriterProject = {
     ...project,
     stage: 'ABANDONED',
     phase: 'ABANDONED',
@@ -1580,11 +1873,20 @@ export function abandonWriterProject(
     readerMood: -80,
     consecutiveDailyUpdates: 0,
   }
-  return {
-    project: next,
-    log: `《${next.title}》被你残忍太监，评论区哀嚎遍野。`,
-    stressDelta: -15,
-  }
+
+  // 太监也计算实绩（带有 collapsePenalty）
+  const actual = Math.round(computeActualPerformance(next) * 0.4)
+  next.actualPerformance = actual
+  const deviation = next.performanceForecast
+    ? computeForecastDeviation(next.performanceForecast, actual)
+    : undefined
+  next.forecastDeviation = deviation
+
+  const log = deviation
+    ? `《${next.title}》被你残忍太监。开书预估 ${next.performanceForecast!.conservative}–${next.performanceForecast!.median}–${next.performanceForecast!.optimistic}，太监实绩 ${actual}【${deviation.label}，偏差 ${deviation.deviationPct > 0 ? '+' : ''}${deviation.deviationPct}%】。`
+    : `《${next.title}》被你残忍太监，评论区哀嚎遍野。`
+
+  return { project: next, log, stressDelta: -15, deviation }
 }
 
 /* ============================================================
