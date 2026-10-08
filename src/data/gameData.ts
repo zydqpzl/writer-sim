@@ -55,6 +55,27 @@ export const STRESS_THRESHOLDS = {
 /** 压力上限 */
 export const STRESS_MAX = 300
 
+/* ============== 请假系统参数 ============== */
+
+/** 开局请假券数量 */
+export const INITIAL_LEAVE_TOKENS = 2
+/** 请假券每周刷新数量 */
+export const LEAVE_TOKEN_REFRESH = 2
+/** 每日最多请假 1 次 */
+export const LEAVE_MAX_PER_DAY = 1
+/** 水字数：每次额外字数 */
+export const WATER_WORDS_BONUS = 300
+/** 水字数：每日上限 */
+export const WATER_WORDS_MAX_PER_DAY = 3
+/** 水字数对质量的惩罚 */
+export const WATER_WORDS_QUALITY_PENALTY = -1
+/** 存稿：每日最多存几次 */
+export const DRAFT_STORE_MAX_PER_DAY = 3
+/** 使用存稿时额外字数 */
+export const DRAFT_USE_WORD_BONUS = 1500
+/** 使用存稿时质量加成 */
+export const DRAFT_USE_QUALITY_BONUS = 1
+
 /* ============== 兼职系统参数（两层） ============== */
 
 /**
@@ -139,6 +160,14 @@ export const INITIAL_STATE: GameState = {
   activeInsuranceIds: [],
   unlockedAuthorTitleIds: [],
   newUnlockedAchievementIds: [],
+  leaveTokens: 2,
+  leaveUsedToday: false,
+  waterModeActive: false,
+  waterWordsUsedToday: 0,
+  storedDrafts: 0,
+  draftsStoredToday: 0,
+  routineLeaveActive: false,
+  leaveDelaySlots: 0,
   stats: {
     savings: 8000,
     health: 80,
@@ -287,6 +316,44 @@ export const ACTIONS: ActionDef[] = [
     },
     requirement: { minSavings: 500 },
   },
+  // 请假行动：消耗精力/假条，获得特殊状态
+  {
+    id: 'leave_probation',
+    type: 'leave',
+    label: '缓刑请假',
+    desc: '严禁追加骚操作，本日无法使用水字数与存稿。',
+    icon: '🛑',
+    accent: 'sky',
+    effects: { energy: -8, stress: -18 },
+  },
+  {
+    id: 'leave_disappear',
+    type: 'leave',
+    label: '失联请假',
+    desc: '暂时失联，父母关心度提升，但会延迟作品更新。',
+    icon: '📵',
+    accent: 'indigo',
+    effects: { energy: -12, familyApproval: 6 },
+  },
+  {
+    id: 'leave_water',
+    type: 'leave',
+    label: '休息放水',
+    desc: '获准低强度更新，开启一次水字数模式。',
+    icon: '💧',
+    accent: 'teal',
+    effects: { energy: -5, stress: -12 },
+  },
+  {
+    id: 'leave_routine',
+    type: 'leave',
+    label: '例行假期',
+    desc: '投入一整天陪伴家人，下一局爆更收益翻倍。',
+    icon: '🏖️',
+    accent: 'violet',
+    effects: { energy: -20, familyApproval: 15 },
+  },
+
   // 居住环境升级：押一付一后迁入，每日房租按新月租计算
   ...HOUSING_TIERS.slice(1).map<ActionDef>((h) => ({
     id: h.id,

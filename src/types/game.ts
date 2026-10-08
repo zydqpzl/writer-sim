@@ -36,6 +36,7 @@ export type ActionType =
   | 'parttime' // 应急保命兼职（极简确定性）
   | 'subculture' // 亚文化奇遇兼职（触发事件链）
   | 'hometown_parttime' // 县城老家帮工（低收益低压力）
+  | 'leave' // 请假：消耗假条/精力，获得特殊状态
 
 /** 玩家属性集合 */
 export interface PlayerStats {
@@ -203,6 +204,22 @@ export interface GameState {
   unlockedAuthorTitleIds: string[]
   /** 本局新解锁的成就 id（用于结算提示与跨局持久化） */
   newUnlockedAchievementIds: string[]
+  /** 请假券（每周刷新） */
+  leaveTokens: number
+  /** 今日是否已请过假 */
+  leaveUsedToday: boolean
+  /** 水字数模式：开启后下一次写作额外 +300 字，质量惩罚 */
+  waterModeActive: boolean
+  /** 今日已水字数次数 */
+  waterWordsUsedToday: number
+  /** 存稿数量（可留到后续更新使用） */
+  storedDrafts: number
+  /** 今日已存稿次数 */
+  draftsStoredToday: number
+  /** 例行假期生效中（爆更收益加成） */
+  routineLeaveActive: boolean
+  /** 失联请假：延迟下一次作品更新 */
+  leaveDelaySlots: number
   /** 待展示的年度总结报告（null 表示没有待处理的年度总结） */
   pendingYearSummary: YearSummary | null
   /** 本年初的状态快照（用于生成年度总结） */

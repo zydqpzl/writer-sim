@@ -137,6 +137,7 @@ export type WriterStrategy =
   | 'CLIFFHANGER' // 悬念钩子
   | 'TROPE_INSERT' // 跟风整活
   | 'FANFICTION' // 同人衍生：蹭原作热度，风险与回报并存
+  | 'BURST' // 爆更：独立高成本高回报动作
 
 /** 主题材：决定作品基础调性 */
 export type MainGenre =

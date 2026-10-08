@@ -34,14 +34,22 @@ import { cloneTrait } from '../data/traits'
 import {
   ACTIONS,
   CREATION_VIRAL_RATE,
+  DRAFT_STORE_MAX_PER_DAY,
+  DRAFT_USE_QUALITY_BONUS,
+  DRAFT_USE_WORD_BONUS,
   ENCOUNTER_CHAIN_IDS,
   ENCOUNTER_SPAWN_RATE,
   HEALTH_THRESHOLDS,
   HOMETOWN_DAILY_STRESS,
+  LEAVE_MAX_PER_DAY,
+  LEAVE_TOKEN_REFRESH,
   NEXT_SLOT,
   REALITY_PUNCH_THRESHOLD,
   STRESS_MAX,
   STRESS_THRESHOLDS,
+  WATER_WORDS_BONUS,
+  WATER_WORDS_MAX_PER_DAY,
+  WATER_WORDS_QUALITY_PENALTY,
   YEAR_LENGTH,
   VIRAL_BONUS_SAVINGS,
   getEmergencyAction,
@@ -817,10 +825,71 @@ export function useGame(initialSetup?: StartSetup) {
     )
   }
 
-  /** 选择普通行动（社媒/父母/休息/消费）。创作走 publishWork，兼职走专用入口。 */
+  /** 选择普通行动（社媒/父母/休息/消费/请假）。创作走 publishWork，兼职走专用入口。 */
   const chooseAction = useCallback(
     (action: ActionDef) => {
       if (state.actedThisSlot) return
+
+      // 请假：消耗请假券，获得特殊状态
+      if (action.type === 'leave') {
+        if (state.leaveUsedToday) {
+          log(state.day, state.slot, 'loss', '今天已经请过假了。')
+          return
+        }
+        if (state.leaveTokens <= 0) {
+          log(state.day, state.slot, 'loss', '请假券已用完，只能用普通休息恢复。')
+          return
+        }
+        if (isActionDisabled(state, 'leave')) {
+          log(state.day, state.slot, 'loss', '当前状态无法请假。')
+          return
+        }
+
+        const maxE = computeMaxEnergy(state)
+        const maxS = computeMaxStress(state)
+        let newStats = applyEffects(state.stats, action.effects, maxE, maxS)
+        let nextState: GameState = {
+          ...state,
+          stats: newStats,
+          leaveTokens: state.leaveTokens - 1,
+          leaveUsedToday: true,
+          actedThisSlot: true,
+        }
+
+        switch (action.id) {
+          case 'leave_probation':
+            nextState = {
+              ...nextState,
+              waterModeActive: false,
+              waterWordsUsedToday: WATER_WORDS_MAX_PER_DAY,
+              draftsStoredToday: DRAFT_STORE_MAX_PER_DAY,
+            }
+            log(state.day, state.slot, 'info', '缓刑请假：本日禁止水字数与存稿。')
+            break
+          case 'leave_disappear':
+            nextState = { ...nextState, leaveDelaySlots: 1 }
+            log(state.day, state.slot, 'info', '失联请假：下一次作品更新将被延迟。')
+            break
+          case 'leave_water':
+            if (nextState.waterWordsUsedToday < WATER_WORDS_MAX_PER_DAY) {
+              nextState = { ...nextState, waterModeActive: true }
+              log(state.day, state.slot, 'info', '休息放水：水字数模式已开启。')
+            } else {
+              log(state.day, state.slot, 'loss', '今日水字数次数已达上限。')
+              return
+            }
+            break
+          case 'leave_routine':
+            nextState = { ...nextState, routineLeaveActive: true }
+            log(state.day, state.slot, 'info', '例行假期：下一局爆更收益翻倍。')
+            break
+        }
+
+        const parts = effectsToParts(action.effects)
+        log(state.day, state.slot, 'info', `${action.label}：${parts}。`)
+        setState(nextState)
+        return
+      }
 
       // 主动封笔隐退：直接触发财务自由结局
       if (action.id === 'retire_financial_freedom') {
@@ -1172,19 +1241,61 @@ export function useGame(initialSetup?: StartSetup) {
         maxS,
       )
 
+      // 水字数模式：为本次写作追加字数与质量惩罚
+      let finalProject = result.project as WriterProject
+      let finalWaterModeActive = state.waterModeActive
+      let finalWaterWordsUsedToday = state.waterWordsUsedToday
+      if (finalWaterModeActive && action.strategy !== 'META') {
+        finalProject = {
+          ...finalProject,
+          wordCount: finalProject.wordCount + WATER_WORDS_BONUS,
+          dailyWordCount: finalProject.dailyWordCount + WATER_WORDS_BONUS,
+          quality: clamp(finalProject.quality + WATER_WORDS_QUALITY_PENALTY),
+        }
+        finalWaterModeActive = false
+        finalWaterWordsUsedToday += 1
+        log(
+          state.day,
+          state.slot,
+          'info',
+          `水字数生效：额外 +${WATER_WORDS_BONUS} 字，质量 ${WATER_WORDS_QUALITY_PENALTY >= 0 ? '+' : ''}${WATER_WORDS_QUALITY_PENALTY}。`,
+        )
+      }
+
+      // 例行假期加持：下一局爆更收益翻倍
+      let finalRoutineLeaveActive = state.routineLeaveActive
+      if (actionId === 'writer_burst' && state.routineLeaveActive) {
+        finalProject = {
+          ...finalProject,
+          wordCount: finalProject.wordCount + action.wordCountAdd,
+          dailyWordCount: finalProject.dailyWordCount + action.wordCountAdd,
+          metrics: {
+            ...finalProject.metrics,
+            currentHype: clampTo(
+              finalProject.metrics.currentHype + (action.effects.hypeBoost ?? 0),
+              0,
+              100,
+            ),
+          },
+        }
+        finalRoutineLeaveActive = false
+        log(state.day, state.slot, 'celebrate', '例行假期加持：爆更收益翻倍！')
+      }
+
       const newProjects = state.careerProjects.map((p) =>
-        p.id === result.project.id ? result.project : p,
+        p.id === finalProject.id ? finalProject : p,
       )
 
-      result.logs.forEach((text) =>
-        log(state.day, state.slot, 'info', text),
-      )
+      result.logs.forEach((text) => log(state.day, state.slot, 'info', text))
 
       // 检查是否有新解锁的江湖称号
       const projectedState: GameState = {
         ...state,
         stats: newStats,
         careerProjects: newProjects,
+        waterModeActive: finalWaterModeActive,
+        waterWordsUsedToday: finalWaterWordsUsedToday,
+        routineLeaveActive: finalRoutineLeaveActive,
       }
       const { newTitleIds, nextTraits } = checkAuthorTitleUnlocks(
         projectedState,
@@ -1212,6 +1323,9 @@ export function useGame(initialSetup?: StartSetup) {
         consecutivePartTimeDays: 0,
         unlockedAuthorTitleIds: [...state.unlockedAuthorTitleIds, ...newTitleIds],
         activeTraits: nextTraits,
+        waterModeActive: finalWaterModeActive,
+        waterWordsUsedToday: finalWaterWordsUsedToday,
+        routineLeaveActive: finalRoutineLeaveActive,
       })
 
       // 写作动作后检测网文圈事件
@@ -1229,6 +1343,119 @@ export function useGame(initialSetup?: StartSetup) {
     },
     [state, log, getActiveWriterProject, startWriterEventChain],
   )
+
+  /** 切换水字数模式（下次写作生效） */
+  const enableWaterMode = useCallback(() => {
+    if (state.actedThisSlot) {
+      log(state.day, state.slot, 'loss', '本时段已行动，无法调整骚操作。')
+      return
+    }
+    if (state.waterWordsUsedToday >= WATER_WORDS_MAX_PER_DAY) {
+      log(state.day, state.slot, 'loss', '今日水字数次数已达上限。')
+      return
+    }
+    if (state.waterModeActive) {
+      setState({ ...state, waterModeActive: false })
+      log(state.day, state.slot, 'info', '已取消水字数模式。')
+      return
+    }
+    setState({ ...state, waterModeActive: true })
+    log(
+      state.day,
+      state.slot,
+      'info',
+      `水字数模式已开启：下次写作额外 +${WATER_WORDS_BONUS} 字。`,
+    )
+  }, [state, log])
+
+  /** 存稿：消耗当前时段，囤一段高质量内容 */
+  const storeDraft = useCallback(() => {
+    if (state.actedThisSlot) return
+    if (!getActiveWriterProject()) {
+      log(state.day, state.slot, 'loss', '没有进行中的作品，无法存稿。')
+      return
+    }
+    if (state.draftsStoredToday >= DRAFT_STORE_MAX_PER_DAY) {
+      log(state.day, state.slot, 'loss', '今日存稿次数已达上限。')
+      return
+    }
+    const maxE = computeMaxEnergy(state)
+    const maxS = computeMaxStress(state)
+    const newStats = applyEffects(
+      state.stats,
+      { energy: -5, stress: 2 },
+      maxE,
+      maxS,
+    )
+    setState({
+      ...state,
+      stats: newStats,
+      storedDrafts: state.storedDrafts + 1,
+      draftsStoredToday: state.draftsStoredToday + 1,
+      actedThisSlot: true,
+    })
+    log(
+      state.day,
+      state.slot,
+      'info',
+      `存稿 +1，当前存稿 ${state.storedDrafts + 1} 段。`,
+    )
+  }, [state, log, getActiveWriterProject])
+
+  /** 使用存稿更新：放出一段存稿 */
+  const useDraftUpdate = useCallback(() => {
+    if (state.actedThisSlot) return
+    const project = getActiveWriterProject()
+    if (!project) {
+      log(state.day, state.slot, 'loss', '没有进行中的作品，无法使用存稿。')
+      return
+    }
+    if (state.storedDrafts <= 0) {
+      log(state.day, state.slot, 'loss', '没有可用存稿。')
+      return
+    }
+    const action = WRITER_ACTION_BY_ID['writer_draft']
+    if (!action) return
+    const maxE = computeMaxEnergy(state)
+    const maxS = computeMaxStress(state)
+    if (state.stats.energy + action.cost.energy < 0) {
+      log(state.day, state.slot, 'loss', '精力不足，无法使用存稿更新。')
+      return
+    }
+    const result = applyWriterAction(
+      project,
+      action,
+      state.day,
+      undefined,
+      undefined,
+      state,
+    )
+    const newStats = applyEffects(
+      state.stats,
+      {
+        energy: result.playerDelta.energy ?? 0,
+        stress: result.playerDelta.stress ?? 0,
+        savings: result.playerDelta.savings ?? 0,
+      },
+      maxE,
+      maxS,
+    )
+    const newProjects = state.careerProjects.map((p) =>
+      p.id === result.project.id ? result.project : p,
+    )
+    result.logs.forEach((text) => log(state.day, state.slot, 'info', text))
+    setState({
+      ...state,
+      stats: newStats,
+      careerProjects: newProjects,
+      storedDrafts: state.storedDrafts - 1,
+      authorProfile: result.authorProfile ?? state.authorProfile,
+      actedThisSlot: true,
+      workedToday: true,
+      consecutivePartTimeDays: 0,
+    })
+    checkStressBreakdown(newStats.stress, state.day, state.slot, maxS)
+  }, [state, log, getActiveWriterProject])
 
   /** 完结当前小说 */
   const completeActiveWriterProject = useCallback(() => {
@@ -2232,6 +2459,16 @@ export function useGame(initialSetup?: StartSetup) {
             memeTrends: platformResult.memeTrends,
           },
           marketTrend,
+          leaveTokens:
+            newDay % 7 === 1
+              ? state.leaveTokens + LEAVE_TOKEN_REFRESH
+              : state.leaveTokens,
+          leaveUsedToday: false,
+          waterModeActive: false,
+          waterWordsUsedToday: 0,
+          draftsStoredToday: 0,
+          routineLeaveActive: false,
+          leaveDelaySlots: Math.max(0, state.leaveDelaySlots - 1),
         })
         setEnding(midEnding)
         log(newDay, 'morning', 'celebrate', `结局解锁：${midEnding.title}`)
@@ -2274,6 +2511,16 @@ export function useGame(initialSetup?: StartSetup) {
           memeTrends: platformResult.memeTrends,
         },
         marketTrend,
+        leaveTokens:
+          newDay % 7 === 1
+            ? state.leaveTokens + LEAVE_TOKEN_REFRESH
+            : state.leaveTokens,
+        leaveUsedToday: false,
+        waterModeActive: false,
+        waterWordsUsedToday: 0,
+        draftsStoredToday: 0,
+        routineLeaveActive: false,
+        leaveDelaySlots: Math.max(0, state.leaveDelaySlots - 1),
       }
 
       // 每日检测网文圈危机/吃瓜事件
@@ -2529,6 +2776,10 @@ export function useGame(initialSetup?: StartSetup) {
     applyWriterStrategy,
     completeActiveWriterProject,
     abandonActiveWriterProject,
+    // 骚操作
+    enableWaterMode,
+    storeDraft,
+    useDraftUpdate,
     // 灵感与梗系统
     gainInspiration,
     applyInspirationToActiveProject,

@@ -59,6 +59,9 @@ export default function App() {
     applyWriterStrategy,
     completeActiveWriterProject,
     abandonActiveWriterProject,
+    enableWaterMode,
+    storeDraft,
+    useDraftUpdate,
     gainInspiration,
     applyInspirationToActiveProject,
     debugAddStress,
@@ -481,6 +484,10 @@ export default function App() {
                 onOpenWriterWork={() => setWriterWorkOpen(true)}
                 onEmergency={doEmergencyPartTime}
                 onNext={advance}
+                onBurst={() => applyWriterStrategy('writer_burst')}
+                onEnableWater={enableWaterMode}
+                onStoreDraft={storeDraft}
+                onUseDraft={useDraftUpdate}
               />
             </div>
           </div>

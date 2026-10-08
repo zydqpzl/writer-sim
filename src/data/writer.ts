@@ -10,6 +10,10 @@ import type {
 import { BOOK_TAGS, isTagCompatibleWithGenre } from './bookTags'
 import { GENRES } from './genres'
 import { GIMMICKS } from './gimmicks'
+import {
+  DRAFT_USE_QUALITY_BONUS,
+  DRAFT_USE_WORD_BONUS,
+} from './gameData'
 
 /* ============== 核心数值参数 ============== */
 
@@ -202,6 +206,16 @@ export const WRITER_STRATEGIES: WriterStrategyConfig[] = [
       '原作已经太监了，靠同人才续命，泪目。',
     ],
   },
+  {
+    id: 'BURST',
+    name: '爆更',
+    desc: '一次性放出大量章节，冲击榜单与追读，但身心消耗极大。',
+    readerComments: [
+      '过年了！作者今天是不是中彩票了？',
+      '这更新量，生产队的驴都自愧不如。',
+      '爆更一时爽，明天是不是要请假？',
+    ],
+  },
 ]
 
 /* ============== 写作动作定义 ============== */
@@ -231,6 +245,38 @@ export const WRITER_ACTIONS: WriterAction[] = [
     wordCountAdd: 10_000,
     retentionDelta: 0.08,
     readerMoodDelta: 15,
+    countsAsDailyUpdate: true,
+  },
+  {
+    id: 'writer_burst',
+    name: '爆更',
+    description: '独立高成本高回报动作：一次性放出大量章节，冲榜冲追读首选。',
+    strategy: 'BURST',
+    phaseRequired: ['DEVELOPING', 'LAUNCHED'],
+    cost: { energy: -22, stress: 18 },
+    effects: { progressAdd: 18, qualityAdd: -1, commercialityAdd: 2, memeValueAdd: 5, hypeBoost: 28 },
+    wordCountAdd: 15_000,
+    retentionDelta: 0.12,
+    readerMoodDelta: 20,
+    countsAsDailyUpdate: true,
+  },
+  {
+    id: 'writer_draft',
+    name: '存稿放出',
+    description: '把之前囤的存稿放出一段，稳定高质量更新。',
+    strategy: 'FILLER',
+    phaseRequired: ['DEVELOPING', 'LAUNCHED'],
+    cost: { energy: -8, stress: -2 },
+    effects: {
+      progressAdd: 8,
+      qualityAdd: DRAFT_USE_QUALITY_BONUS,
+      commercialityAdd: 1,
+      memeValueAdd: 1,
+      hypeBoost: 10,
+    },
+    wordCountAdd: DRAFT_USE_WORD_BONUS,
+    retentionDelta: 0.04,
+    readerMoodDelta: 6,
     countsAsDailyUpdate: true,
   },
   {
