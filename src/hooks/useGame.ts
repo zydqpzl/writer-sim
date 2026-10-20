@@ -35,13 +35,10 @@ import {
   ACTIONS,
   CREATION_VIRAL_RATE,
   DRAFT_STORE_MAX_PER_DAY,
-  DRAFT_USE_QUALITY_BONUS,
-  DRAFT_USE_WORD_BONUS,
   ENCOUNTER_CHAIN_IDS,
   ENCOUNTER_SPAWN_RATE,
   HEALTH_THRESHOLDS,
   HOMETOWN_DAILY_STRESS,
-  LEAVE_MAX_PER_DAY,
   LEAVE_TOKEN_REFRESH,
   NEXT_SLOT,
   REALITY_PUNCH_THRESHOLD,
@@ -77,6 +74,7 @@ import {
   settleLegacy,
 } from '../data/legacy'
 import type { LegacyProfile, StartingIdentity } from '../data/legacy'
+import type { ProfessionType } from '../types/career'
 import { WRITER_ACTION_BY_ID } from '../data/writer'
 import { INSPIRATION_BY_ID } from '../data/inspirations'
 import {
@@ -391,6 +389,7 @@ const EVENT_META: Record<
 }
 
 export interface StartSetup {
+  profession?: ProfessionType
   identity?: StartingIdentity
   keptCardIds?: string[]
 }
@@ -411,6 +410,7 @@ function computeStartState(
   )
   return {
     ...state,
+    professionType: setup?.profession ?? 'WRITER',
     authorProfile: createAuthorProfile(
       state.authorProfile.penName,
       backgroundIds,
@@ -489,9 +489,23 @@ export function useGame(initialSetup?: StartSetup) {
           day: 1,
           slot: 'morning',
           kind: 'system',
-          text: nextSetup?.identity
-            ? `以【${nextSetup.identity.name}】身份开局，新的一局开始。`
-            : '新的一局开始。这次，你想活出怎样的人生？',
+          text: (() => {
+            const professionName: Record<ProfessionType, string> = {
+              WRITER: '网文作家',
+              UP_HOST: 'UP主',
+              FILM_CREATOR: '影视创作者',
+            }
+            const parts: string[] = ['新的一局开始']
+            if (nextSetup?.profession) {
+              parts.push(`职业：${professionName[nextSetup.profession]}`)
+            }
+            if (nextSetup?.identity) {
+              parts.push(`身份：${nextSetup.identity.name}`)
+            }
+            return parts.length > 1
+              ? `${parts.join('，')}。`
+              : '新的一局开始。这次，你想活出怎样的人生？'
+          })(),
         },
         ...opening.logs.map((l) => ({
           id: logIdSeed++,

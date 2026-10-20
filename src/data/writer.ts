@@ -10,12 +10,13 @@ import type {
 import { BOOK_TAGS, isTagCompatibleWithGenre } from './bookTags'
 import { GENRES } from './genres'
 import { GIMMICKS } from './gimmicks'
-import {
-  DRAFT_USE_QUALITY_BONUS,
-  DRAFT_USE_WORD_BONUS,
-} from './gameData'
+/* ============== 核心数值参数 ==============*/
 
-/* ============== 核心数值参数 ============== */
+/** 使用存稿更新时额外增加的字数 */
+export const DRAFT_USE_WORD_BONUS = 1500
+
+/** 使用存稿更新时额外增加的质量 */
+export const DRAFT_USE_QUALITY_BONUS = 1
 
 /** 网文上架字数（默认 20 万字） */
 export const WRITER_LAUNCH_WORD_COUNT = 200_000

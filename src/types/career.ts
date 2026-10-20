@@ -1,7 +1,7 @@
 // CareerEngine：通用主业系统类型定义
 
-/** 职业类型 */
-export type ProfessionType = 'WRITER' | 'UP_HOST' | 'STREAMER' | 'AI_DEV'
+/** 职业类型：网文作家 / UP主 / 影视创作者 */
+export type ProfessionType = 'WRITER' | 'UP_HOST' | 'FILM_CREATOR'
 
 /** 通用项目生命周期阶段 */
 export type ProjectPhase =
@@ -494,6 +494,72 @@ export interface WriterProject extends CareerProject {
 /** 判断一个项目是否为网文项目 */
 export function isWriterProject(p: CareerProject): p is WriterProject {
   return p.professionType === 'WRITER'
+}
+
+/* ============================================================
+ * UP主（UP_HOST）职业最小占位
+ * 当前仅保留类型底座与基础项目结构，完整玩法待后续迭代。
+ * ============================================================ */
+
+/** UP主项目阶段 */
+export type UpHostStage =
+  | 'CONCEPT' // 选题/脚本中
+  | 'DEVELOPING' // 拍摄/剪辑中
+  | 'LAUNCHED' // 已发布/更新中
+  | 'COMPLETED' // 系列完结
+  | 'ABANDONED' // 停更/烂尾
+
+/** UP主项目（最小占位实现） */
+export interface UpHostProject extends CareerProject {
+  professionType: 'UP_HOST'
+  stage: UpHostStage
+  /** 内容赛道 */
+  niche: string
+  /** 当前期数/集数 */
+  episodeCount: number
+  /** 累计播放量 */
+  totalViews: number
+  /** 当前订阅数 */
+  subscribers: number
+}
+
+/** 判断一个项目是否为 UP主 项目 */
+export function isUpHostProject(p: CareerProject): p is UpHostProject {
+  return p.professionType === 'UP_HOST'
+}
+
+/* ============================================================
+ * 影视创作者（FILM_CREATOR）职业最小占位
+ * 当前仅保留类型底座与基础项目结构，完整玩法待后续迭代。
+ * ============================================================ */
+
+/** 影视项目阶段 */
+export type FilmCreatorStage =
+  | 'CONCEPT' // 剧本/策划中
+  | 'DEVELOPING' // 筹备/拍摄中
+  | 'LAUNCHED' // 上映/播出中
+  | 'COMPLETED' // 项目完结
+  | 'ABANDONED' // 项目搁浅
+
+/** 影视创作者项目（最小占位实现） */
+export interface FilmCreatorProject extends CareerProject {
+  professionType: 'FILM_CREATOR'
+  stage: FilmCreatorStage
+  /** 作品类型：短片/网大/剧集/电影 */
+  format: string
+  /** 当前制作进度（百分比） */
+  productionProgress: number
+  /** 累计票房/播放量估算 */
+  boxOfficeEstimate: number
+  /** 行业人脉值 */
+  industryConnections: number
+}
+
+/** 判断一个项目是否为影视创作者项目 */
+export function isFilmCreatorProject(
+  p: CareerProject,
+): p is FilmCreatorProject {
+  return p.professionType === 'FILM_CREATOR'
 }
 
 /** 网络作家动作定义 */

@@ -71,10 +71,6 @@ export const WATER_WORDS_MAX_PER_DAY = 3
 export const WATER_WORDS_QUALITY_PENALTY = -1
 /** 存稿：每日最多存几次 */
 export const DRAFT_STORE_MAX_PER_DAY = 3
-/** 使用存稿时额外字数 */
-export const DRAFT_USE_WORD_BONUS = 1500
-/** 使用存稿时质量加成 */
-export const DRAFT_USE_QUALITY_BONUS = 1
 
 /* ============== 兼职系统参数（两层） ============== */
 
@@ -122,6 +118,7 @@ export const ENCOUNTER_CHAIN_IDS: string[] = ['boardgame_dm', 'family_new_year']
 export const INITIAL_STATE: GameState = {
   day: 1,
   slot: 'morning',
+  professionType: 'WRITER',
   location: 'city',
   actedThisSlot: false,
   partTimeLock: false,

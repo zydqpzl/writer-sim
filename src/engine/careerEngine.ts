@@ -10,6 +10,7 @@ import type {
   BookCreationDraft,
   CareerActionResult,
   CareerDailyResult,
+  CareerProject,
   ComplexityTier,
   ExecutionCheckResult,
   ForecastDeviation,
@@ -22,6 +23,7 @@ import type {
   NovelComplexity,
   NovelStyleTrait,
   PerformanceForecast,
+  ProfessionType,
   ProjectPhase,
   WordOfMouthPool,
   WriterAction,
@@ -2218,9 +2220,85 @@ export function applyMemeHomage(
  * ============================================================ */
 
 export function createProject(
-  professionType: 'WRITER',
+  professionType: ProfessionType,
   input: CreateWriterProjectInput,
-): WriterProject {
+): CareerProject {
   if (professionType === 'WRITER') return createWriterProject(input)
+  if (professionType === 'UP_HOST') return createUpHostProject(input)
+  if (professionType === 'FILM_CREATOR') return createFilmCreatorProject(input)
   throw new Error(`Unsupported profession type: ${professionType}`)
+}
+
+/** 创建最小占位 UP主 项目 */
+function createUpHostProject(
+  input: CreateWriterProjectInput,
+): import('../types/career').UpHostProject {
+  const rng = input.rng ?? Math.random
+  const id = `uphost_${Date.now()}_${Math.floor(rng() * 1000)}`
+  return {
+    id,
+    professionType: 'UP_HOST',
+    title: '新系列筹备中',
+    phase: 'CONCEPT',
+    dayCreated: input.day,
+    quality: 50,
+    commerciality: 50,
+    memeValue: 50,
+    progress: 0,
+    totalWorkload: 100,
+    metrics: {
+      viewsOrReaders: 0,
+      fanConversionRate: 0.02,
+      hypeDecay: 0.1,
+      currentHype: 50,
+    },
+    stats: {
+      totalRevenue: 0,
+      totalFansGained: 0,
+      bugOrControversy: 0,
+      ipValue: 0,
+    },
+    stage: 'CONCEPT',
+    niche: '生活区',
+    episodeCount: 0,
+    totalViews: 0,
+    subscribers: 0,
+  }
+}
+
+/** 创建最小占位影视创作者项目 */
+function createFilmCreatorProject(
+  input: CreateWriterProjectInput,
+): import('../types/career').FilmCreatorProject {
+  const rng = input.rng ?? Math.random
+  const id = `film_${Date.now()}_${Math.floor(rng() * 1000)}`
+  return {
+    id,
+    professionType: 'FILM_CREATOR',
+    title: '独立短片计划',
+    phase: 'CONCEPT',
+    dayCreated: input.day,
+    quality: 55,
+    commerciality: 45,
+    memeValue: 45,
+    progress: 0,
+    totalWorkload: 100,
+    metrics: {
+      viewsOrReaders: 0,
+      fanConversionRate: 0.015,
+      hypeDecay: 0.08,
+      currentHype: 40,
+    },
+    stats: {
+      totalRevenue: 0,
+      totalFansGained: 0,
+      bugOrControversy: 0,
+      ipValue: 0,
+    },
+    stage: 'CONCEPT',
+    format: '短片',
+    productionProgress: 0,
+    boxOfficeEstimate: 0,
+    industryConnections: 0,
+  }
 }

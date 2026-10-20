@@ -4,6 +4,7 @@ import type {
   AuthorRank,
   CareerProject,
   MarketTrend,
+  ProfessionType,
   WritingInspiration,
 } from './career'
 import type { InspirationCard } from './event'
@@ -150,6 +151,8 @@ export interface GameState {
   day: number
   /** 当前时段 */
   slot: TimeSlot
+  /** 当前主职业（开局选择） */
+  professionType: ProfessionType
   /** 玩家当前所处地点（城市 / 老家） */
   location: PlayerLocation
   /** 玩家属性 */

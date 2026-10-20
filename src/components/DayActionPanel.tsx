@@ -1,12 +1,13 @@
 import type { ReactNode } from 'react'
 import type { ActionDef, GameState, TimeSlot } from '../types/game'
-import type { WriterProject } from '../types/career'
+import type { ProfessionType, WriterProject } from '../types/career'
 import {
   DRAFT_STORE_MAX_PER_DAY,
   WATER_WORDS_MAX_PER_DAY,
 } from '../data/gameData'
 
 interface Props {
+  professionType: ProfessionType
   state: GameState
   actions: ActionDef[]
   /** 应急保命兼职 */
@@ -160,7 +161,14 @@ function ActionCard({
   )
 }
 
+const PROFESSION_LABEL: Record<ProfessionType, string> = {
+  WRITER: '网文作家',
+  UP_HOST: 'UP主',
+  FILM_CREATOR: '影视创作者',
+}
+
 export default function DayActionPanel({
+  professionType,
   state,
   actions,
   emergencyAction,
@@ -270,80 +278,124 @@ export default function DayActionPanel({
         )}
       </header>
 
-      {/* 核心 4 列：更新 / 休息 / 咖啡 / 爆更 */}
-      <div className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
-        <ActionCard
-          icon="✍️"
-          title={activeProject ? '更新连载' : '开新书'}
-          desc={
-            activeProject
-              ? `《${activeProject.title}》· 追读 ${(activeProject.readerRetention * 100).toFixed(1)}%`
-              : '选择平台、题材与文风'
-          }
-          accent="brand"
-          disabled={baseDisabled}
-          onClick={onOpenWriterWork}
-          footer={
-            activeProject && activeProject.performanceForecast ? (
-              <div className="text-[10px] text-slate-400">
-                预估带 {activeProject.performanceForecast.conservative}–
-                {activeProject.performanceForecast.median}–
-                {activeProject.performanceForecast.optimistic}
+      {/* 核心 4 列：更新 / 休息 / 咖啡 / 爆更（仅网文作家） */}
+      {professionType === 'WRITER' ? (
+        <div className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
+          <ActionCard
+            icon="✍️"
+            title={activeProject ? '更新连载' : '开新书'}
+            desc={
+              activeProject
+                ? `《${activeProject.title}》· 追读 ${(activeProject.readerRetention * 100).toFixed(1)}%`
+                : '选择平台、题材与文风'
+            }
+            accent="brand"
+            disabled={baseDisabled}
+            onClick={onOpenWriterWork}
+            footer={
+              activeProject && activeProject.performanceForecast ? (
+                <div className="text-[10px] text-slate-400">
+                  预估带 {activeProject.performanceForecast.conservative}–
+                  {activeProject.performanceForecast.median}–
+                  {activeProject.performanceForecast.optimistic}
+                </div>
+              ) : null
+            }
+          />
+
+          {restAction ? (
+            <ActionCard
+              icon={restAction.icon}
+              title={restAction.label}
+              desc={restAction.desc}
+              accent={restAction.accent}
+              disabled={baseDisabled}
+              onClick={() => onChoose(restAction)}
+              footer={effectTags(restAction)}
+            />
+          ) : (
+            <div />
+          )}
+
+          {coffeeAction ? (
+            <ActionCard
+              icon={coffeeAction.icon}
+              title={coffeeAction.label}
+              desc={coffeeAction.desc}
+              accent={coffeeAction.accent}
+              disabled={baseDisabled}
+              onClick={() => onChoose(coffeeAction)}
+              footer={effectTags(coffeeAction)}
+            />
+          ) : (
+            <div />
+          )}
+
+          <ActionCard
+            icon="🚀"
+            title="爆更"
+            desc="高成本高回报：+15000 字，冲榜冲追读"
+            accent="rose"
+            disabled={baseDisabled || !activeProject}
+            onClick={onBurst}
+            footer={
+              <div className="flex flex-wrap gap-1">
+                <span className="chip bg-rose-50 text-rose-600 text-[10px] ring-1 ring-inset ring-rose-100">
+                  精力 -22
+                </span>
+                <span className="chip bg-rose-50 text-rose-600 text-[10px] ring-1 ring-inset ring-rose-100">
+                  压力 +18
+                </span>
               </div>
-            ) : null
-          }
-        />
-
-        {restAction ? (
-          <ActionCard
-            icon={restAction.icon}
-            title={restAction.label}
-            desc={restAction.desc}
-            accent={restAction.accent}
-            disabled={baseDisabled}
-            onClick={() => onChoose(restAction)}
-            footer={effectTags(restAction)}
+            }
           />
-        ) : (
-          <div />
-        )}
-
-        {coffeeAction ? (
-          <ActionCard
-            icon={coffeeAction.icon}
-            title={coffeeAction.label}
-            desc={coffeeAction.desc}
-            accent={coffeeAction.accent}
-            disabled={baseDisabled}
-            onClick={() => onChoose(coffeeAction)}
-            footer={effectTags(coffeeAction)}
-          />
-        ) : (
-          <div />
-        )}
-
-        <ActionCard
-          icon="🚀"
-          title="爆更"
-          desc="高成本高回报：+15000 字，冲榜冲追读"
-          accent="rose"
-          disabled={baseDisabled || !activeProject}
-          onClick={onBurst}
-          footer={
-            <div className="flex flex-wrap gap-1">
-              <span className="chip bg-rose-50 text-rose-600 text-[10px] ring-1 ring-inset ring-rose-100">
-                精力 -22
-              </span>
-              <span className="chip bg-rose-50 text-rose-600 text-[10px] ring-1 ring-inset ring-rose-100">
-                压力 +18
+        </div>
+      ) : (
+        <div className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
+          <div className="col-span-2 rounded-xl border border-slate-200 bg-slate-50/50 p-3 lg:col-span-2">
+            <div className="flex items-center gap-2">
+              <span className="chip bg-amber-50 text-amber-600">开发中</span>
+              <span className="text-sm font-semibold text-slate-700">
+                {PROFESSION_LABEL[professionType]}路线
               </span>
             </div>
-          }
-        />
-      </div>
+            <p className="mt-1.5 text-[11px] leading-relaxed text-slate-600">
+              核心 CareerEngine 玩法尚未实装。当前可先体验基础生存循环，后续逐步开放选题、拍摄、发布与流量经营。
+            </p>
+          </div>
 
-      {/* 请假区 */}
-      <div className="mb-3">
+          {restAction ? (
+            <ActionCard
+              icon={restAction.icon}
+              title={restAction.label}
+              desc={restAction.desc}
+              accent={restAction.accent}
+              disabled={baseDisabled}
+              onClick={() => onChoose(restAction)}
+              footer={effectTags(restAction)}
+            />
+          ) : (
+            <div />
+          )}
+
+          {coffeeAction ? (
+            <ActionCard
+              icon={coffeeAction.icon}
+              title={coffeeAction.label}
+              desc={coffeeAction.desc}
+              accent={coffeeAction.accent}
+              disabled={baseDisabled}
+              onClick={() => onChoose(coffeeAction)}
+              footer={effectTags(coffeeAction)}
+            />
+          ) : (
+            <div />
+          )}
+        </div>
+      )}
+
+      {/* 请假区（仅网文作家） */}
+      {professionType === 'WRITER' && <div className="mb-3">
         <div className="mb-1.5 flex items-center justify-between">
           <span className="text-xs font-semibold text-slate-500">请假</span>
           <div className="flex items-center gap-1.5">
@@ -392,81 +444,83 @@ export default function DayActionPanel({
             )
           })}
         </div>
-      </div>
+      </div>}
 
       {/* 骚操作区 + 其余动作 */}
-      <div className="mb-3 grid flex-1 grid-cols-1 gap-3 lg:grid-cols-3">
-        {/* 骚操作 */}
-        <div className="card flex flex-col gap-2 bg-slate-50/50 p-2.5 ring-1 ring-slate-200">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-700">
-              骚操作助手
-            </span>
-            {waterModeActive && (
-              <span className="chip bg-sky-100 text-sky-700 text-[10px]">
-                水字数生效中
+      <div className={`mb-3 grid flex-1 grid-cols-1 gap-3 ${professionType === 'WRITER' ? 'lg:grid-cols-3' : 'lg:grid-cols-1'}`}>
+        {/* 骚操作（仅网文作家） */}
+        {professionType === 'WRITER' && (
+          <div className="card flex flex-col gap-2 bg-slate-50/50 p-2.5 ring-1 ring-slate-200">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-700">
+                骚操作助手
               </span>
-            )}
-          </div>
+              {waterModeActive && (
+                <span className="chip bg-sky-100 text-sky-700 text-[10px]">
+                  水字数生效中
+                </span>
+              )}
+            </div>
 
-          <button
-            type="button"
-            disabled={
-              baseDisabled ||
-              waterWordsUsedToday >= WATER_WORDS_MAX_PER_DAY
-            }
-            onClick={onEnableWater}
-            className={[
-              'flex items-center justify-between rounded-lg border px-2.5 py-2 text-left text-xs transition-all',
-              waterModeActive
-                ? 'border-sky-300 bg-sky-50 text-sky-700'
-                : baseDisabled ||
-                    waterWordsUsedToday >= WATER_WORDS_MAX_PER_DAY
+            <button
+              type="button"
+              disabled={
+                baseDisabled ||
+                waterWordsUsedToday >= WATER_WORDS_MAX_PER_DAY
+              }
+              onClick={onEnableWater}
+              className={[
+                'flex items-center justify-between rounded-lg border px-2.5 py-2 text-left text-xs transition-all',
+                waterModeActive
+                  ? 'border-sky-300 bg-sky-50 text-sky-700'
+                  : baseDisabled ||
+                      waterWordsUsedToday >= WATER_WORDS_MAX_PER_DAY
+                    ? 'cursor-not-allowed border-slate-100 bg-slate-50 opacity-60'
+                    : 'border-slate-200 bg-white hover:border-sky-300 hover:bg-sky-50/50',
+              ].join(' ')}
+            >
+              <span>💧 水字数 {waterModeActive ? '· 已开启' : ''}</span>
+              <span className="text-[10px] text-slate-400">
+                {waterWordsUsedToday}/{WATER_WORDS_MAX_PER_DAY}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              disabled={baseDisabled || draftsStoredToday >= DRAFT_STORE_MAX_PER_DAY}
+              onClick={onStoreDraft}
+              className={[
+                'flex items-center justify-between rounded-lg border px-2.5 py-2 text-left text-xs transition-all',
+                baseDisabled || draftsStoredToday >= DRAFT_STORE_MAX_PER_DAY
                   ? 'cursor-not-allowed border-slate-100 bg-slate-50 opacity-60'
-                  : 'border-slate-200 bg-white hover:border-sky-300 hover:bg-sky-50/50',
-            ].join(' ')}
-          >
-            <span>💧 水字数 {waterModeActive ? '· 已开启' : ''}</span>
-            <span className="text-[10px] text-slate-400">
-              {waterWordsUsedToday}/{WATER_WORDS_MAX_PER_DAY}
-            </span>
-          </button>
+                  : 'border-slate-200 bg-white hover:border-violet-300 hover:bg-violet-50/50',
+              ].join(' ')}
+            >
+              <span>📝 存一稿</span>
+              <span className="text-[10px] text-slate-400">
+                {draftsStoredToday}/{DRAFT_STORE_MAX_PER_DAY}
+              </span>
+            </button>
 
-          <button
-            type="button"
-            disabled={baseDisabled || draftsStoredToday >= DRAFT_STORE_MAX_PER_DAY}
-            onClick={onStoreDraft}
-            className={[
-              'flex items-center justify-between rounded-lg border px-2.5 py-2 text-left text-xs transition-all',
-              baseDisabled || draftsStoredToday >= DRAFT_STORE_MAX_PER_DAY
-                ? 'cursor-not-allowed border-slate-100 bg-slate-50 opacity-60'
-                : 'border-slate-200 bg-white hover:border-violet-300 hover:bg-violet-50/50',
-            ].join(' ')}
-          >
-            <span>📝 存一稿</span>
-            <span className="text-[10px] text-slate-400">
-              {draftsStoredToday}/{DRAFT_STORE_MAX_PER_DAY}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            disabled={baseDisabled || storedDrafts <= 0}
-            onClick={onUseDraft}
-            className={[
-              'flex items-center justify-between rounded-lg border px-2.5 py-2 text-left text-xs transition-all',
-              baseDisabled || storedDrafts <= 0
-                ? 'cursor-not-allowed border-slate-100 bg-slate-50 opacity-60'
-                : 'border-slate-200 bg-white hover:border-emerald-300 hover:bg-emerald-50/50',
-            ].join(' ')}
-          >
-            <span>📤 用存稿更新</span>
-            <span className="text-[10px] text-slate-400">存 {storedDrafts}</span>
-          </button>
-        </div>
+            <button
+              type="button"
+              disabled={baseDisabled || storedDrafts <= 0}
+              onClick={onUseDraft}
+              className={[
+                'flex items-center justify-between rounded-lg border px-2.5 py-2 text-left text-xs transition-all',
+                baseDisabled || storedDrafts <= 0
+                  ? 'cursor-not-allowed border-slate-100 bg-slate-50 opacity-60'
+                  : 'border-slate-200 bg-white hover:border-emerald-300 hover:bg-emerald-50/50',
+              ].join(' ')}
+            >
+              <span>📤 用存稿更新</span>
+              <span className="text-[10px] text-slate-400">存 {storedDrafts}</span>
+            </button>
+          </div>
+        )}
 
         {/* 其余日常动作 */}
-        <div className="grid grid-cols-2 gap-2 lg:col-span-2">
+        <div className={`grid grid-cols-2 gap-2 ${professionType === 'WRITER' ? 'lg:col-span-2' : ''}`}>
           {otherActions.map((action) => {
             const isWorkLocked = action.type === 'work' && partTimeLock
             const disabled = actedThisSlot || isWorkLocked

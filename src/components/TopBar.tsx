@@ -1,9 +1,11 @@
+import type { ProfessionType } from '../types/career'
 import type { PlayerStats, PlayerLocation } from '../types/game'
 
 interface Props {
   day: number
   yearLength: number
   slot: 'morning' | 'afternoon' | 'evening'
+  professionType: ProfessionType
   stats: PlayerStats
   location: PlayerLocation
   maxEnergy: number
@@ -13,6 +15,12 @@ interface Props {
   onOpenAchievements: () => void
   onToggleDebug: () => void
   debugOpen: boolean
+}
+
+const PROFESSION_LABEL: Record<ProfessionType, string> = {
+  WRITER: '网文作家',
+  UP_HOST: 'UP主',
+  FILM_CREATOR: '影视创作者',
 }
 
 const SLOT_LABEL: Record<Props['slot'], string> = {
@@ -34,6 +42,7 @@ export default function TopBar({
   day,
   yearLength,
   slot,
+  professionType,
   stats,
   location,
   maxEnergy,
@@ -78,6 +87,9 @@ export default function TopBar({
           </span>
           <span className="chip bg-brand-50 text-brand-600">
             {SLOT_ICON[slot]} {SLOT_LABEL[slot]}
+          </span>
+          <span className="chip bg-violet-50 text-violet-600">
+            {PROFESSION_LABEL[professionType]}
           </span>
         </div>
       </div>

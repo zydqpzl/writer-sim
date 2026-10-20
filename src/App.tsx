@@ -14,9 +14,10 @@ import AuthorArchivePanel from './components/AuthorArchivePanel'
 import TopBar from './components/TopBar'
 import AssetStoreModal from './components/AssetStoreModal'
 import YearSummaryModal from './components/YearSummaryModal'
+import CareerSelectModal from './components/CareerSelectModal'
 import { legacyPointsFor } from './data/legacy'
 import type { StartingIdentity } from './data/legacy'
-import type { WriterProject } from './types/career'
+import type { ProfessionType, WriterProject } from './types/career'
 import { isWriterProject } from './types/career'
 import type { ActionDef } from './types/game'
 import {
@@ -87,6 +88,13 @@ export default function App() {
   const [setupOpen, setSetupOpen] = useState(
     () => legacyProfile.keptCardIds.length > 0 && legacyProfile.totalLegacyPoints > 0,
   )
+  // 开局职业选择：持久化到 localStorage，避免刷新时重复弹出，结局后清空
+  const [pendingProfession, setPendingProfession] = useState<ProfessionType | null>(() => {
+    if (typeof window === 'undefined') return null
+    const p = localStorage.getItem('fs-current-profession') as ProfessionType | null
+    return p && ['WRITER', 'UP_HOST', 'FILM_CREATOR'].includes(p) ? p : null
+  })
+  const [careerSetupOpen, setCareerSetupOpen] = useState(() => pendingProfession === null)
 
   // 低频投资/消费动作：住房、装备、培训、保险、公关、身心健康、退休
   const isAssetAction = (a: ActionDef): boolean => {
@@ -136,6 +144,7 @@ export default function App() {
         day={state.day}
         yearLength={YEAR_LENGTH}
         slot={state.slot}
+        professionType={state.professionType}
         stats={state.stats}
         location={state.location}
         maxEnergy={maxEnergy}
@@ -473,6 +482,7 @@ export default function App() {
             )}
             <div className="flex-1 min-h-0 overflow-y-auto pr-1">
               <DayActionPanel
+                professionType={state.professionType}
                 state={state}
                 actions={availableActions}
                 emergencyAction={emergencyAction}
@@ -616,6 +626,9 @@ export default function App() {
           onConfirm={(carriedCardId) => {
             settleEnding(carriedCardId)
             setSetupOpen(true)
+            localStorage.removeItem('fs-current-profession')
+            setCareerSetupOpen(true)
+            setPendingProfession(null)
           }}
         />
       )}
@@ -630,8 +643,22 @@ export default function App() {
         onChoose={chooseAction}
       />
 
+      {/* 开局职业选择 */}
+      {careerSetupOpen && (
+        <CareerSelectModal
+          onSelect={(profession) => {
+            localStorage.setItem('fs-current-profession', profession)
+            setPendingProfession(profession)
+            setCareerSetupOpen(false)
+            if (!setupOpen) {
+              restart({ profession })
+            }
+          }}
+        />
+      )}
+
       {/* 二周目开局设置（结算后或本地有待用携带卡时） */}
-      {setupOpen && (
+      {setupOpen && pendingProfession && (
         <LegacySetupModal
           legacyProfile={legacyProfile}
           onStart={({
@@ -641,8 +668,10 @@ export default function App() {
             identity: StartingIdentity
             keptCardIds: string[]
           }) => {
-            restart({ identity, keptCardIds })
+            restart({ profession: pendingProfession, identity, keptCardIds })
             setSetupOpen(false)
+            localStorage.removeItem('fs-current-profession')
+            setPendingProfession(null)
           }}
         />
       )}
