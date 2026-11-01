@@ -334,9 +334,9 @@ export default function WriterWorkModal({
         onClick={onClose}
       />
 
-      <div className="relative flex w-full max-w-3xl flex-col rounded-2xl bg-white shadow-2xl ring-1 ring-brand-200 animate-fade-in max-h-[90vh]">
-        {/* 头部 */}
-        <header className="flex items-center gap-3 border-b border-slate-100 p-5">
+      <div className="relative flex w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-brand-200 animate-fade-in modal-viewport-height">
+        {/* 头部：固定不滚动 */}
+        <header className="shrink-0 flex items-center gap-3 border-b border-slate-100 p-5">
           <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-2xl">
             {activeProject ? '✍️' : '📚'}
           </span>
@@ -358,12 +358,12 @@ export default function WriterWorkModal({
         </header>
 
         {actedThisSlot && (
-          <div className="mx-5 mt-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          <div className="mx-5 mt-3 rounded-lg bg-amber-50 px-3 py-1.5 text-xs text-amber-700 sm:mt-4 sm:py-2">
             本时段已行动，无法继续写作。点击右上角关闭，或推进到下一时段。
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto p-5">
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
           {!activeProject ? (
             <div className="flex flex-col gap-5">
               {/* 平台选择 */}
@@ -936,8 +936,8 @@ export default function WriterWorkModal({
           )}
         </div>
 
-        {/* 底部操作 */}
-        <div className="flex items-center justify-between border-t border-slate-100 p-5">
+        {/* 底部操作栏：固定不滚动 */}
+        <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3 sm:py-4 md:px-5 md:py-5">
           <div className="text-xs text-slate-400">
             精力 {energy} / {maxEnergy} · 压力 {stress} / {maxStress}
           </div>
@@ -946,7 +946,7 @@ export default function WriterWorkModal({
               type="button"
               disabled={actedThisSlot}
               onClick={handleStart}
-              className="rounded-xl bg-brand-500 px-5 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:bg-slate-300"
+              className="shrink-0 rounded-xl bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition-transform hover:bg-brand-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:active:scale-100 sm:px-5"
             >
               在 {selectedPlatform.name} 开书
             </button>
@@ -954,7 +954,7 @@ export default function WriterWorkModal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-xl bg-slate-100 px-5 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200"
+              className="shrink-0 rounded-xl bg-slate-100 px-5 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200"
             >
               关闭
             </button>

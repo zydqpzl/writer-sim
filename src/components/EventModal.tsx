@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import type {
   EventPopupOption,
   GameEvent,
@@ -96,6 +97,16 @@ export default function EventModal({
   const style = TONE_STYLE[event.tone]
   const hasOptions = !!event.options && event.options.length > 0
 
+  // 开发环境警告：有选项的事件必须提供 onSelectOption，否则用户会被卡死
+  useEffect(() => {
+    if (hasOptions && !onSelectOption && import.meta.env.DEV) {
+      console.warn(
+        `[EventModal] 事件 "${event.title}" (${event.id}) 有 ${event.options!.length} 个选项，但未传入 onSelectOption 回调。` +
+          '用户将无法选择选项且不能通过遮罩关闭，这会导致死锁。请检查父组件。',
+      )
+    }
+  }, [hasOptions, onSelectOption, event])
+
   function renderOptionChips(option: EventPopupOption) {
     if (!option.effects) return null
     const entries = Object.entries(option.effects).filter(
@@ -144,72 +155,86 @@ export default function EventModal({
         onClick={hasOptions ? undefined : onClose}
       />
 
-      {/* 弹窗主体 */}
+      {/* 弹窗主体：flex-col + 最大高度约束，低高度视口下内容区可滚动 */}
       <div
-        className={`relative w-full max-w-md animate-fade-in rounded-2xl bg-white p-6 shadow-2xl ring-1 ${style.ring}`}
+        className={`relative flex w-full max-w-md flex-col overflow-hidden animate-fade-in rounded-2xl bg-white shadow-2xl ring-1 ${style.ring} modal-viewport-height`}
       >
-        <div className="flex items-start gap-3">
-          <span
-            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-2xl ${style.iconBg}`}
-          >
-            {event.icon}
-          </span>
-          <div className="min-w-0 flex-1">
-            <span className={`chip ${style.chip}`}>{TONE_LABEL[event.tone]}</span>
-            <h3 className={`mt-1.5 text-lg font-semibold ${style.title}`}>
-              {event.title}
-            </h3>
+        {/* 头部：固定不滚动 */}
+        <div className="shrink-0 p-6 pb-4">
+          <div className="flex items-start gap-3">
+            <span
+              className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-2xl ${style.iconBg}`}
+            >
+              {event.icon}
+            </span>
+            <div className="min-w-0 flex-1">
+              <span className={`chip ${style.chip}`}>{TONE_LABEL[event.tone]}</span>
+              <h3 className={`mt-1.5 text-lg font-semibold ${style.title}`}>
+                {event.title}
+              </h3>
+            </div>
           </div>
         </div>
 
-        <p className="mt-4 text-sm leading-relaxed text-slate-600">
-          {event.text}
-        </p>
+        {/* 正文 + 选项区域：可滚动 */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-4">
+          <p className="text-sm leading-relaxed text-slate-600">
+            {event.text}
+          </p>
 
-        {event.effects.length > 0 && (
-          <div className="mt-4 flex flex-wrap gap-1.5">
-            {event.effects.map((e, i) => (
-              <span
-                key={`${e}-${i}`}
-                className="chip bg-slate-50 text-slate-600 ring-1 ring-inset ring-slate-200/70"
-              >
-                {e}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {hasOptions ? (
-          <div className="mt-5 space-y-2.5">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-              选择应对方式
+          {event.effects.length > 0 && (
+            <div className="mt-4 flex flex-wrap gap-1.5">
+              {event.effects.map((e, i) => (
+                <span
+                  key={`${e}-${i}`}
+                  className="chip bg-slate-50 text-slate-600 ring-1 ring-inset ring-slate-200/70"
+                >
+                  {e}
+                </span>
+              ))}
             </div>
-            {event.options!.map((opt, i) => (
+          )}
+
+          {hasOptions && (
+            <div className="mt-5 space-y-2.5">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                选择应对方式
+              </div>
+              {event.options!.map((opt, i) => (
               <button
                 key={`${event.id}-${i}`}
                 type="button"
+                disabled={!onSelectOption}
                 onClick={() => onSelectOption?.(i)}
                 className={[
-                  'flex w-full flex-col rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition-all',
-                  'hover:-translate-y-0.5 hover:border-amber-300 hover:bg-amber-50/40',
+                  'flex w-full flex-col rounded-xl border px-4 py-3 text-left transition-all',
+                  onSelectOption
+                    ? 'border-slate-200 bg-white hover:-translate-y-0.5 hover:border-amber-300 hover:bg-amber-50/40 active:scale-[0.99]'
+                    : 'cursor-not-allowed border-slate-100 bg-slate-50 opacity-60',
                 ].join(' ')}
               >
-                <div className="text-sm font-semibold text-slate-800">
-                  {opt.text}
-                </div>
-                {renderOptionChips(opt)}
+                  <div className="text-sm font-semibold text-slate-800">
+                    {opt.text}
+                  </div>
+                  {renderOptionChips(opt)}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 底部操作区：无选项时显示"知道了"按钮，固定不滚动 */}
+        {!hasOptions && (
+          <div className="shrink-0 border-t border-slate-100 px-6 py-4">
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={onClose}
+                className={`rounded-xl px-5 py-2 text-sm font-semibold transition-colors active:scale-[0.98] ${style.btn}`}
+              >
+                {event.type === 'reality_punch' ? '咬牙再撑撑' : '知道了'}
               </button>
-            ))}
-          </div>
-        ) : (
-          <div className="mt-6 flex justify-end">
-            <button
-              type="button"
-              onClick={onClose}
-              className={`rounded-xl px-5 py-2 text-sm font-semibold transition-colors ${style.btn}`}
-            >
-              {event.type === 'reality_punch' ? '咬牙再撑撑' : '知道了'}
-            </button>
+            </div>
           </div>
         )}
       </div>

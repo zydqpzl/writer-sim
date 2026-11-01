@@ -1,0 +1,785 @@
+/**
+ * 存档数据校验
+ *
+ *  校验原则：
+ *  - 不做深度业务规则校验（如精力是否超过上限等），只做结构和类型校验
+ *  - 不修改传入数据
+ *  - 返回成功/失败 + 错误信息
+ *
+ *  校验深度分层：
+ *  - 根级字段：严格校验（schemaVersion, runId, savedAt 等）
+ *  - GameState 核心字段：严格校验（day, slot, stats, actedThisSlot 等）
+ *  - 嵌套对象/数组：结构级校验（存在 + 类型正确，不深入每个元素的每个字段）
+ *  - 纯业务数据：宽松校验（数组元素是对象即可，不逐个字段深挖）
+ */
+
+import { SAVE_SCHEMA_VERSION } from './saveTypes'
+
+/** 校验错误信息 */
+export interface ValidationError {
+  path: string
+  message: string
+}
+
+/** 校验结果 */
+export interface ValidationResult {
+  valid: boolean
+  errors: ValidationError[]
+}
+
+/** 校验一个值是否为普通对象（非 null、非数组） */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === 'object' && value !== null && !Array.isArray(value)
+  )
+}
+
+/** 校验一个值是否为数字且不是 NaN/Infinity */
+function isValidNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+/** 校验一个值是否为字符串且非空 */
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0
+}
+
+/** 校验 PlayerStats 七个核心属性 */
+function validatePlayerStats(
+  value: unknown,
+  errors: ValidationError[],
+  basePath: string,
+): void {
+  if (!isPlainObject(value)) {
+    errors.push({ path: basePath, message: '玩家属性必须是对象' })
+    return
+  }
+  const statFields = [
+    'savings',
+    'health',
+    'energy',
+    'stress',
+    'familyApproval',
+    'influence',
+    'fans',
+  ] as const
+  for (const f of statFields) {
+    if (!isValidNumber(value[f])) {
+      errors.push({
+        path: `${basePath}.${f}`,
+        message: '必须是有效数字',
+      })
+    }
+  }
+}
+
+/** 校验 careerProjects 数组
+ *
+ *  深度：检查每个项目的顶层标识字段和三维质量。
+ *  不深挖：metrics / stats 的内部字段、WriterProject 扩展字段等。
+ */
+function validateCareerProjects(
+  value: unknown,
+  errors: ValidationError[],
+  basePath: string,
+): void {
+  if (!Array.isArray(value)) {
+    errors.push({ path: basePath, message: '作品列表必须是数组' })
+    return
+  }
+  for (let i = 0; i < value.length; i++) {
+    const item = value[i]
+    const itemPath = `${basePath}[${i}]`
+    if (!isPlainObject(item)) {
+      errors.push({ path: itemPath, message: '作品条目必须是对象' })
+      continue
+    }
+    if (!isNonEmptyString(item.id)) {
+      errors.push({ path: `${itemPath}.id`, message: '必须是非空字符串' })
+    }
+    if (
+      item.professionType !== 'WRITER' &&
+      item.professionType !== 'UP_HOST' &&
+      item.professionType !== 'FILM_CREATOR'
+    ) {
+      errors.push({
+        path: `${itemPath}.professionType`,
+        message: 'professionType 值无效',
+      })
+    }
+    if (typeof item.title !== 'string') {
+      errors.push({ path: `${itemPath}.title`, message: '必须是字符串' })
+    }
+    if (typeof item.phase !== 'string') {
+      errors.push({ path: `${itemPath}.phase`, message: '必须是字符串' })
+    }
+    if (!isValidNumber(item.dayCreated)) {
+      errors.push({
+        path: `${itemPath}.dayCreated`,
+        message: '必须是有效数字',
+      })
+    }
+    // 三维核心质量
+    const qualityFields = ['quality', 'commerciality', 'memeValue'] as const
+    for (const f of qualityFields) {
+      if (!isValidNumber(item[f])) {
+        errors.push({
+          path: `${itemPath}.${f}`,
+          message: '必须是有效数字',
+        })
+      }
+    }
+    if (!isValidNumber(item.progress)) {
+      errors.push({
+        path: `${itemPath}.progress`,
+        message: '必须是有效数字',
+      })
+    }
+    if (!isValidNumber(item.totalWorkload)) {
+      errors.push({
+        path: `${itemPath}.totalWorkload`,
+        message: '必须是有效数字',
+      })
+    }
+    if (!isPlainObject(item.metrics)) {
+      errors.push({ path: `${itemPath}.metrics`, message: '必须是对象' })
+    }
+    if (!isPlainObject(item.stats)) {
+      errors.push({ path: `${itemPath}.stats`, message: '必须是对象' })
+    }
+  }
+}
+
+/** 校验 platformEcosystem
+ *
+ *  深度：检查 5 个子数组是否存在且为数组类型。
+ *  不深挖：每个子数组元素的内部字段（NPC 数据、榜单条目等）。
+ */
+function validatePlatformEcosystem(
+  value: unknown,
+  errors: ValidationError[],
+  basePath: string,
+): void {
+  if (!isPlainObject(value)) {
+    errors.push({ path: basePath, message: '平台生态必须是对象' })
+    return
+  }
+  const arrayFields = [
+    'npcs',
+    'leaderboards',
+    'rumors',
+    'interactions',
+    'memeTrends',
+  ] as const
+  for (const f of arrayFields) {
+    if (!Array.isArray(value[f])) {
+      errors.push({
+        path: `${basePath}.${f}`,
+        message: '必须是数组',
+      })
+    }
+  }
+}
+
+/** 校验 authorProfile
+ *
+ *  深度：检查 penName、skills 五维、evolutionStage、backgrounds 数组。
+ *  不深挖：skills.domainKnowledge、backgrounds 数组元素。
+ */
+function validateAuthorProfile(
+  value: unknown,
+  errors: ValidationError[],
+  basePath: string,
+): void {
+  if (!isPlainObject(value)) {
+    errors.push({ path: basePath, message: '作者档案必须是对象' })
+    return
+  }
+  if (typeof value.penName !== 'string') {
+    errors.push({ path: `${basePath}.penName`, message: '必须是字符串' })
+  }
+  if (!isPlainObject(value.skills)) {
+    errors.push({ path: `${basePath}.skills`, message: '必须是对象' })
+  } else {
+    const skillFields = [
+      'prose',
+      'pacing',
+      'structure',
+      'marketInsight',
+    ] as const
+    for (const f of skillFields) {
+      if (!isValidNumber(value.skills[f])) {
+        errors.push({
+          path: `${basePath}.skills.${f}`,
+          message: '必须是有效数字',
+        })
+      }
+    }
+    if (!isPlainObject(value.skills.domainKnowledge)) {
+      errors.push({
+        path: `${basePath}.skills.domainKnowledge`,
+        message: '必须是对象',
+      })
+    }
+  }
+  if (!Array.isArray(value.backgrounds)) {
+    errors.push({ path: `${basePath}.backgrounds`, message: '必须是数组' })
+  }
+  if (typeof value.evolutionStage !== 'string') {
+    errors.push({
+      path: `${basePath}.evolutionStage`,
+      message: '必须是字符串',
+    })
+  }
+}
+
+/** 校验 writerCareerProfile
+ *
+ *  深度：检查总完本/太监数、genreMastery 对象、unlockedStyleTraits 数组、platformCareer 对象。
+ *  不深挖：genreMastery 各题材内部、platformCareer 各平台内部字段。
+ */
+function validateWriterCareerProfile(
+  value: unknown,
+  errors: ValidationError[],
+  basePath: string,
+): void {
+  if (!isPlainObject(value)) {
+    errors.push({ path: basePath, message: '作家生涯档案必须是对象' })
+    return
+  }
+  if (!isValidNumber(value.totalCompletedBooks)) {
+    errors.push({
+      path: `${basePath}.totalCompletedBooks`,
+      message: '必须是有效数字',
+    })
+  }
+  if (!isValidNumber(value.totalAbandonedBooks)) {
+    errors.push({
+      path: `${basePath}.totalAbandonedBooks`,
+      message: '必须是有效数字',
+    })
+  }
+  if (!isPlainObject(value.genreMastery)) {
+    errors.push({
+      path: `${basePath}.genreMastery`,
+      message: '必须是对象',
+    })
+  }
+  if (!Array.isArray(value.unlockedStyleTraits)) {
+    errors.push({
+      path: `${basePath}.unlockedStyleTraits`,
+      message: '必须是数组',
+    })
+  }
+  if (!isPlainObject(value.platformCareer)) {
+    errors.push({
+      path: `${basePath}.platformCareer`,
+      message: '必须是对象',
+    })
+  }
+}
+
+/** 校验 pendingYearSummary（null 或 YearSummary 对象）
+ *
+ *  深度：非 null 时检查：
+ *  - 年份 / 起止天
+ *  - 起止属性快照（startStats / endStats）
+ *  - 起止作家生涯档案快照（startWriterProfile / endWriterProfile）
+ *  - 核心统计数字（wordCountDelta / revenueDelta / fansDelta / completedBooks / abandonedBooks）
+ *  - majorEvents 数组（逐项检查字符串类型）、nextYearForecast 字符串（年度总结界面直接读取）
+ *  不深挖：majorEvents 各字符串内容、nextYearForecast 文案。
+ */
+function validatePendingYearSummary(
+  value: unknown,
+  errors: ValidationError[],
+  basePath: string,
+): void {
+  if (value === null) return
+  if (!isPlainObject(value)) {
+    errors.push({ path: basePath, message: '年度总结必须是对象或 null' })
+    return
+  }
+  if (!isValidNumber(value.year)) {
+    errors.push({ path: `${basePath}.year`, message: '必须是有效数字' })
+  }
+  if (!isValidNumber(value.startDay)) {
+    errors.push({ path: `${basePath}.startDay`, message: '必须是有效数字' })
+  }
+  if (!isValidNumber(value.endDay)) {
+    errors.push({ path: `${basePath}.endDay`, message: '必须是有效数字' })
+  }
+  validatePlayerStats(value.startStats, errors, `${basePath}.startStats`)
+  validatePlayerStats(value.endStats, errors, `${basePath}.endStats`)
+  validateWriterCareerProfile(
+    value.startWriterProfile,
+    errors,
+    `${basePath}.startWriterProfile`,
+  )
+  validateWriterCareerProfile(
+    value.endWriterProfile,
+    errors,
+    `${basePath}.endWriterProfile`,
+  )
+  if (!isPlainObject(value.stats)) {
+    errors.push({ path: `${basePath}.stats`, message: '必须是对象' })
+  } else {
+    const statFields = [
+      'wordCountDelta',
+      'revenueDelta',
+      'fansDelta',
+      'completedBooks',
+      'abandonedBooks',
+    ] as const
+    for (const f of statFields) {
+      if (!isValidNumber(value.stats[f])) {
+        errors.push({
+          path: `${basePath}.stats.${f}`,
+          message: '必须是有效数字',
+        })
+      }
+    }
+  }
+  if (!Array.isArray(value.majorEvents)) {
+    errors.push({ path: `${basePath}.majorEvents`, message: '必须是字符串数组' })
+  } else {
+    for (let i = 0; i < value.majorEvents.length; i++) {
+      if (typeof value.majorEvents[i] !== 'string') {
+        errors.push({
+          path: `${basePath}.majorEvents[${i}]`,
+          message: '数组元素必须是字符串',
+        })
+      }
+    }
+  }
+  if (typeof value.nextYearForecast !== 'string') {
+    errors.push({
+      path: `${basePath}.nextYearForecast`,
+      message: '必须是字符串',
+    })
+  }
+}
+
+/** 校验 yearStartSnapshot
+ *
+ *  深度：检查 day、stats、writerCareerProfile、totalWordCount。
+ */
+function validateYearStartSnapshot(
+  value: unknown,
+  errors: ValidationError[],
+  basePath: string,
+): void {
+  if (!isPlainObject(value)) {
+    errors.push({ path: basePath, message: '年初快照必须是对象' })
+    return
+  }
+  if (!isValidNumber(value.day)) {
+    errors.push({ path: `${basePath}.day`, message: '必须是有效数字' })
+  }
+  validatePlayerStats(value.stats, errors, `${basePath}.stats`)
+  validateWriterCareerProfile(
+    value.writerCareerProfile,
+    errors,
+    `${basePath}.writerCareerProfile`,
+  )
+  if (!isValidNumber(value.totalWordCount)) {
+    errors.push({
+      path: `${basePath}.totalWordCount`,
+      message: '必须是有效数字',
+    })
+  }
+}
+
+/** 校验 GameState 关键字段
+ *
+ *  不校验每个字段的业务范围，只确保结构完整和类型正确。
+ *  重点校验最核心的字段，其他字段宽松处理（存在即可，类型大致正确）。
+ */
+function validateGameState(
+  value: unknown,
+  errors: ValidationError[],
+  basePath: string,
+): void {
+  if (!isPlainObject(value)) {
+    errors.push({ path: basePath, message: 'GameState 必须是对象' })
+    return
+  }
+
+  const requiredNumberFields: Array<keyof typeof value> = ['day']
+  for (const field of requiredNumberFields) {
+    if (!isValidNumber(value[field])) {
+      errors.push({
+        path: `${basePath}.${String(field)}`,
+        message: `必须是有效数字`,
+      })
+    }
+  }
+
+  if (
+    value.slot !== 'morning' &&
+    value.slot !== 'afternoon' &&
+    value.slot !== 'evening'
+  ) {
+    errors.push({ path: `${basePath}.slot`, message: '时段值无效' })
+  }
+
+  // 玩家属性（深度校验 7 个核心字段）
+  validatePlayerStats(value.stats, errors, `${basePath}.stats`)
+
+  // 作品列表（深度校验每个项目的标识与三维质量）
+  validateCareerProjects(
+    value.careerProjects,
+    errors,
+    `${basePath}.careerProjects`,
+  )
+
+  if (!Array.isArray(value.inventory)) {
+    errors.push({
+      path: `${basePath}.inventory`,
+      message: '灵感背包必须是数组',
+    })
+  }
+
+  if (!Array.isArray(value.activeTraits)) {
+    errors.push({
+      path: `${basePath}.activeTraits`,
+      message: '状态特质必须是数组',
+    })
+  }
+
+  // 平台生态（结构级校验 5 个子数组）
+  validatePlatformEcosystem(
+    value.platformEcosystem,
+    errors,
+    `${basePath}.platformEcosystem`,
+  )
+
+  // 作者档案（五维技能 + 履历 + 进化阶段）
+  validateAuthorProfile(
+    value.authorProfile,
+    errors,
+    `${basePath}.authorProfile`,
+  )
+
+  // 作家生涯档案
+  validateWriterCareerProfile(
+    value.writerCareerProfile,
+    errors,
+    `${basePath}.writerCareerProfile`,
+  )
+
+  // 待处理年度总结（null 或对象）
+  validatePendingYearSummary(
+    value.pendingYearSummary,
+    errors,
+    `${basePath}.pendingYearSummary`,
+  )
+
+  // 年初快照
+  validateYearStartSnapshot(
+    value.yearStartSnapshot,
+    errors,
+    `${basePath}.yearStartSnapshot`,
+  )
+
+  if (typeof value.actedThisSlot !== 'boolean') {
+    errors.push({
+      path: `${basePath}.actedThisSlot`,
+      message: 'actedThisSlot 必须是布尔值',
+    })
+  }
+}
+
+/** 校验日志数组
+ *
+ *  深度：检查 id、day、slot、kind、text 全部字段。
+ *  slot 和 kind 使用枚举白名单，避免非法值导致渲染异常。
+ */
+function validateLogs(
+  value: unknown,
+  errors: ValidationError[],
+  basePath: string,
+): void {
+  if (!Array.isArray(value)) {
+    errors.push({ path: basePath, message: '日志必须是数组' })
+    return
+  }
+  const validSlots = new Set(['morning', 'afternoon', 'evening'])
+  const validKinds = new Set([
+    'info',
+    'gain',
+    'loss',
+    'event',
+    'system',
+    'celebrate',
+  ])
+  for (let i = 0; i < value.length; i++) {
+    const entry = value[i]
+    const entryPath = `${basePath}[${i}]`
+    if (!isPlainObject(entry)) {
+      errors.push({
+        path: entryPath,
+        message: '日志条目必须是对象',
+      })
+      continue
+    }
+    if (!isValidNumber(entry.id)) {
+      errors.push({
+        path: `${entryPath}.id`,
+        message: '日志 id 必须是有效数字',
+      })
+    }
+    if (!isValidNumber(entry.day)) {
+      errors.push({
+        path: `${entryPath}.day`,
+        message: '日志 day 必须是有效数字',
+      })
+    }
+    if (!validSlots.has(String(entry.slot))) {
+      errors.push({
+        path: `${entryPath}.slot`,
+        message: `slot 必须是 morning/afternoon/evening 之一`,
+      })
+    }
+    if (!validKinds.has(String(entry.kind))) {
+      errors.push({
+        path: `${entryPath}.kind`,
+        message: `kind 必须是 info/gain/loss/event/system/celebrate 之一`,
+      })
+    }
+    if (typeof entry.text !== 'string') {
+      errors.push({
+        path: `${entryPath}.text`,
+        message: '日志文本必须是字符串',
+      })
+    }
+  }
+}
+
+/** 校验事件链运行态
+ *
+ *  深度：除了类型和基本合法性，还检查状态一致性：
+ *  - chainId 为 null 时，stepId 也必须为 null，stepDepth 必须为 0（无事件链进行中）
+ *  - chainId 非 null 时，stepId 也必须非 null（处于事件链中时必须有当前步骤）
+ *  - stepDepth 必须为非负整数（不接受小数）
+ *
+ *  注意：校验器无法访问静态事件链配置数据，因此无法验证
+ *        chainId 是否指向真实存在的事件链、stepId 是否
+ *        属于该链。这些检查应由游戏恢复逻辑在有配置
+ *        数据的上下文中完成。若校验器无法识别 chainId/stepId，
+ *        不应当阻止存档通过结构校验。
+ */
+function validateEventChainState(
+  value: unknown,
+  errors: ValidationError[],
+  basePath: string,
+): void {
+  if (!isPlainObject(value)) {
+    errors.push({ path: basePath, message: '事件链状态必须是对象' })
+    return
+  }
+  const hasChain = value.chainId !== null
+  const hasStep = value.stepId !== null
+
+  if (value.chainId !== null && !isNonEmptyString(value.chainId)) {
+    errors.push({
+      path: `${basePath}.chainId`,
+      message: 'chainId 必须是非空字符串或 null',
+    })
+  }
+  if (value.stepId !== null && !isNonEmptyString(value.stepId)) {
+    errors.push({
+      path: `${basePath}.stepId`,
+      message: 'stepId 必须是非空字符串或 null',
+    })
+  }
+  if (!isValidNumber(value.stepDepth)) {
+    errors.push({
+      path: `${basePath}.stepDepth`,
+      message: 'stepDepth 必须是有效数字',
+    })
+  } else if (!Number.isInteger(value.stepDepth)) {
+    errors.push({
+      path: `${basePath}.stepDepth`,
+      message: 'stepDepth 必须是整数',
+    })
+  } else if (value.stepDepth < 0) {
+    errors.push({
+      path: `${basePath}.stepDepth`,
+      message: 'stepDepth 不能为负数',
+    })
+  }
+
+  // 一致性检查
+  if (hasChain && !hasStep) {
+    errors.push({
+      path: basePath,
+      message: 'chainId 存在但 stepId 为 null：处于事件链中时必须有当前步骤',
+    })
+  }
+  if (!hasChain && hasStep) {
+    errors.push({
+      path: basePath,
+      message: 'chainId 为 null 但 stepId 存在：无事件链时不应有当前步骤',
+    })
+  }
+  if (!hasChain && isValidNumber(value.stepDepth) && (value.stepDepth as number) !== 0) {
+    errors.push({
+      path: `${basePath}.stepDepth`,
+      message: '无事件链时 stepDepth 必须为 0',
+    })
+  }
+}
+
+/** 校验 pendingEvent（GameEvent 弹窗事件）
+ *
+ *  深度：检查事件恢复和展示所需的关键字段。
+ *  - id/type/title/tone/text：事件标识与渲染必需字段
+ *  - effects：效果摘要数组（逐项检查字符串类型，用于展示）
+ *  - options：可选，若存在则校验每个选项的 text 和基本结构
+ *  不深挖：options 内部 effects/getCard 等业务字段的正确性。
+ */
+function validatePendingEvent(
+  value: unknown,
+  errors: ValidationError[],
+  basePath: string,
+): void {
+  if (value === null) return
+  if (!isPlainObject(value)) {
+    errors.push({ path: basePath, message: '待处理事件必须是对象或 null' })
+    return
+  }
+  if (!isValidNumber(value.id)) {
+    errors.push({ path: `${basePath}.id`, message: '事件 id 必须是数字' })
+  }
+  const validTypes = new Set([
+    'reality_punch',
+    'stress_breakdown',
+    'major_branch',
+  ])
+  if (!validTypes.has(String(value.type))) {
+    errors.push({
+      path: `${basePath}.type`,
+      message: 'type 必须是 reality_punch/stress_breakdown/major_branch 之一',
+    })
+  }
+  if (typeof value.title !== 'string' || value.title.length === 0) {
+    errors.push({ path: `${basePath}.title`, message: '事件标题必须是非空字符串' })
+  }
+  if (typeof value.icon !== 'string') {
+    errors.push({ path: `${basePath}.icon`, message: 'icon 必须是字符串' })
+  }
+  const validTones = new Set(['good', 'bad', 'neutral', 'critical'])
+  if (!validTones.has(String(value.tone))) {
+    errors.push({
+      path: `${basePath}.tone`,
+      message: 'tone 必须是 good/bad/neutral/critical 之一',
+    })
+  }
+  if (typeof value.text !== 'string') {
+    errors.push({ path: `${basePath}.text`, message: '事件文本必须是字符串' })
+  }
+  if (!Array.isArray(value.effects)) {
+    errors.push({ path: `${basePath}.effects`, message: 'effects 必须是字符串数组' })
+  } else {
+    for (let i = 0; i < value.effects.length; i++) {
+      if (typeof value.effects[i] !== 'string') {
+        errors.push({
+          path: `${basePath}.effects[${i}]`,
+          message: '数组元素必须是字符串',
+        })
+      }
+    }
+  }
+  // 若有 options，检查每个选项的基本结构
+  if (value.options !== undefined) {
+    if (!Array.isArray(value.options)) {
+      errors.push({ path: `${basePath}.options`, message: 'options 必须是数组' })
+    } else {
+      for (let i = 0; i < value.options.length; i++) {
+        const opt = value.options[i]
+        const optPath = `${basePath}.options[${i}]`
+        if (!isPlainObject(opt)) {
+          errors.push({ path: optPath, message: '选项必须是对象' })
+          continue
+        }
+        if (typeof opt.text !== 'string') {
+          errors.push({ path: `${optPath}.text`, message: '选项文本必须是字符串' })
+        }
+      }
+    }
+  }
+}
+
+/** 校验 GameSave 根对象
+ *
+ *  返回 ValidationResult：valid 为 true 表示通过，errors 列出所有问题。
+ */
+export function validateGameSave(value: unknown): ValidationResult {
+  const errors: ValidationError[] = []
+
+  if (!isPlainObject(value)) {
+    return { valid: false, errors: [{ path: '', message: '存档必须是对象' }] }
+  }
+
+  // schemaVersion
+  if (!isValidNumber(value.schemaVersion)) {
+    errors.push({ path: 'schemaVersion', message: '必须是有效数字' })
+  }
+
+  // gameVersion
+  if (typeof value.gameVersion !== 'string') {
+    errors.push({ path: 'gameVersion', message: '必须是字符串' })
+  }
+
+  // savedAt
+  if (!isValidNumber(value.savedAt) || value.savedAt <= 0) {
+    errors.push({ path: 'savedAt', message: '必须是有效的时间戳' })
+  }
+
+  // runId
+  if (!isNonEmptyString(value.runId)) {
+    errors.push({ path: 'runId', message: '必须是非空字符串' })
+  }
+
+  // state
+  validateGameState(value.state, errors, 'state')
+
+  // logs
+  validateLogs(value.logs, errors, 'logs')
+
+  // eventChain
+  validateEventChainState(value.eventChain, errors, 'eventChain')
+
+  // pendingEvent
+  validatePendingEvent(value.pendingEvent, errors, 'pendingEvent')
+
+  // endingId
+  if (value.endingId !== null && typeof value.endingId !== 'string') {
+    errors.push({ path: 'endingId', message: '必须是字符串或 null' })
+  }
+
+  // logIdSeed
+  if (!isValidNumber(value.logIdSeed) || value.logIdSeed < 1) {
+    errors.push({ path: 'logIdSeed', message: '必须是 >= 1 的数字' })
+  }
+
+  // eventIdSeed
+  if (!isValidNumber(value.eventIdSeed) || value.eventIdSeed < 1) {
+    errors.push({ path: 'eventIdSeed', message: '必须是 >= 1 的数字' })
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+  }
+}
+
+/** 检查存档版本是否兼容
+ *
+ *  - 返回 true：当前代码可以处理这个版本
+ *  - 返回 false：版本过高或过低，无法兼容
+ */
+export function isSchemaVersionCompatible(schemaVersion: number): boolean {
+  // 当前只支持 v1
+  return schemaVersion === SAVE_SCHEMA_VERSION
+}

@@ -1,0 +1,1386 @@
+/**
+ * 存档模块自检脚本（Node.js 环境，不需要浏览器）
+ *
+ *  用法：npx tsx src/save/selfTest.ts
+ *
+ *  由于项目没有测试框架，这里用最朴素的断言方式做基础自检。
+ *  覆盖：
+ *    - 序列化 / 反序列化 / 校验 / 版本兼容（纯逻辑）
+ *    - localStorage 存储层读写（通过模拟 Storage 接口）
+ *    - 两步写入法的各种异常恢复路径
+ *    - corrupted / incompatible / read_error 三种状态的区分
+ *    - runId 设计验证
+ */
+
+import {
+  serializeSave,
+  deserializeSave,
+} from './saveSerializer'
+import { validateGameSave, isSchemaVersionCompatible } from './saveValidator'
+import {
+  loadSave,
+  writeSave,
+  deleteSave,
+  hasSave,
+  isLocalStorageAvailable,
+} from './saveStorage'
+import type { GameSave } from './saveTypes'
+import {
+  SAVE_SCHEMA_VERSION,
+  GAME_VERSION,
+  SAVE_KEY_PRIMARY,
+  SAVE_KEY_TEMP,
+} from './saveTypes'
+
+// ========================================================================
+// 测试数据：构造一个符合真实类型的最小合法存档
+// ========================================================================
+
+function makeValidSave(): GameSave {
+  return {
+    schemaVersion: SAVE_SCHEMA_VERSION,
+    gameVersion: GAME_VERSION,
+    savedAt: Date.now(),
+    runId: 'run-test-001',
+    state: {
+      day: 1,
+      slot: 'morning',
+      professionType: 'WRITER',
+      location: 'city',
+      stats: {
+        savings: 5000,
+        health: 80,
+        energy: 100,
+        stress: 30,
+        familyApproval: 60,
+        influence: 5,
+        fans: 0,
+      },
+      actedThisSlot: false,
+      partTimeLock: false,
+      workedToday: false,
+      consecutivePartTimeDays: 0,
+      totalPartTimeDays: 0,
+      realityPunchTriggered: false,
+      availableEncounter: null,
+      inventory: [],
+      activeTraits: [],
+      pathScores: {
+        BIG_CITY_CREATOR: 0,
+        HOMETOWN_KOL: 0,
+        SUBCULTURE_GURU: 0,
+        REALITY_COMPROMISE: 0,
+        BALANCED: 0,
+      },
+      subcultureReputation: 0,
+      examProgress: 0,
+      careerProjects: [],
+      inspirations: [],
+      unlockedMemes: [],
+      authorRank: 'COLT',
+      platformEcosystem: {
+        npcs: [],
+        leaderboards: [],
+        rumors: [],
+        interactions: [],
+        memeTrends: [],
+      },
+      marketTrend: {
+        id: 'balanced',
+        name: '平稳期',
+        hotGenres: [],
+        hotTags: [],
+        hotGimmicks: [],
+        decayDays: 30,
+        saturation: {},
+      },
+      authorProfile: {
+        penName: '测试作者',
+        skills: {
+          prose: 10,
+          pacing: 10,
+          structure: 10,
+          marketInsight: 10,
+          domainKnowledge: {},
+        },
+        backgrounds: [],
+        evolutionStage: 'NEWBIE',
+      },
+      writerCareerProfile: {
+        genreMastery: {
+          XUANHUAN: { genre: 'XUANHUAN', completedCount: 0, totalWordCount: 0, proficiency: 0 },
+          URBAN: { genre: 'URBAN', completedCount: 0, totalWordCount: 0, proficiency: 0 },
+          SCI_FI: { genre: 'SCI_FI', completedCount: 0, totalWordCount: 0, proficiency: 0 },
+          SUSPENSE: { genre: 'SUSPENSE', completedCount: 0, totalWordCount: 0, proficiency: 0 },
+          GAME: { genre: 'GAME', completedCount: 0, totalWordCount: 0, proficiency: 0 },
+          HISTORY: { genre: 'HISTORY', completedCount: 0, totalWordCount: 0, proficiency: 0 },
+        },
+        unlockedStyleTraits: [],
+        totalCompletedBooks: 0,
+        totalAbandonedBooks: 0,
+        platformCareer: {
+          ZHONGDIAN: { totalRevenue: 0, totalFans: 0, currentRankId: 'rookie' },
+          KUAIYUE: { totalRevenue: 0, totalFans: 0, currentRankId: 'rookie' },
+          SUCHUAN: { totalRevenue: 0, totalFans: 0, currentRankId: 'rookie' },
+          LVJIANG: { totalRevenue: 0, totalFans: 0, currentRankId: 'rookie' },
+        },
+      },
+      housingId: 'dorm',
+      ownedEquipmentIds: [],
+      activeInsuranceIds: [],
+      unlockedAuthorTitleIds: [],
+      newUnlockedAchievementIds: [],
+      leaveTokens: 0,
+      leaveUsedToday: false,
+      waterModeActive: false,
+      waterWordsUsedToday: 0,
+      storedDrafts: 0,
+      draftsStoredToday: 0,
+      routineLeaveActive: false,
+      leaveDelaySlots: 0,
+      pendingYearSummary: null,
+      yearStartSnapshot: {
+        day: 1,
+        stats: {
+          savings: 5000,
+          health: 80,
+          energy: 100,
+          stress: 30,
+          familyApproval: 60,
+          influence: 5,
+          fans: 0,
+        },
+        writerCareerProfile: {
+          genreMastery: {
+            XUANHUAN: { genre: 'XUANHUAN', completedCount: 0, totalWordCount: 0, proficiency: 0 },
+            URBAN: { genre: 'URBAN', completedCount: 0, totalWordCount: 0, proficiency: 0 },
+            SCI_FI: { genre: 'SCI_FI', completedCount: 0, totalWordCount: 0, proficiency: 0 },
+            SUSPENSE: { genre: 'SUSPENSE', completedCount: 0, totalWordCount: 0, proficiency: 0 },
+            GAME: { genre: 'GAME', completedCount: 0, totalWordCount: 0, proficiency: 0 },
+            HISTORY: { genre: 'HISTORY', completedCount: 0, totalWordCount: 0, proficiency: 0 },
+          },
+          unlockedStyleTraits: [],
+          totalCompletedBooks: 0,
+          totalAbandonedBooks: 0,
+          platformCareer: {
+            ZHONGDIAN: { totalRevenue: 0, totalFans: 0, currentRankId: 'rookie' },
+            KUAIYUE: { totalRevenue: 0, totalFans: 0, currentRankId: 'rookie' },
+            SUCHUAN: { totalRevenue: 0, totalFans: 0, currentRankId: 'rookie' },
+            LVJIANG: { totalRevenue: 0, totalFans: 0, currentRankId: 'rookie' },
+          },
+        },
+        totalWordCount: 0,
+      },
+    },
+    logs: [
+      { id: 1, day: 1, slot: 'morning', kind: 'system', text: '游戏开始' },
+    ],
+    eventChain: {
+      chainId: null,
+      stepId: null,
+      stepDepth: 0,
+    },
+    pendingEvent: null,
+    endingId: null,
+    logIdSeed: 2,
+    eventIdSeed: 1,
+  }
+}
+
+// ========================================================================
+// 断言工具
+// ========================================================================
+
+let passed = 0
+let failed = 0
+
+function assert(condition: boolean, name: string): void {
+  if (condition) {
+    passed++
+    console.log(`  ✓ ${name}`)
+  } else {
+    failed++
+    console.log(`  ✗ ${name}`)
+  }
+}
+
+// ========================================================================
+// 模拟 localStorage（Node 环境下替代浏览器 API）
+// ========================================================================
+
+interface MockStorageConfig {
+  /** 所有读取都抛异常 */
+  readThrows?: boolean
+  /** 所有写入都抛异常 */
+  writeThrows?: boolean
+  /** 所有删除都抛异常 */
+  removeThrows?: boolean
+  /** 写入后回读不一致（模拟存储损坏） */
+  writeCorrupts?: boolean
+  /** 指定 key 读取时抛异常 */
+  readErrorKeys?: Set<string>
+  /** 指定 key 写入时抛异常 */
+  writeErrorKeys?: Set<string>
+  /** 指定 key 删除时抛异常 */
+  removeErrorKeys?: Set<string>
+}
+
+class MockLocalStorage implements Storage {
+  private store = new Map<string, string>()
+  config: MockStorageConfig = {}
+
+  get length(): number {
+    return this.store.size
+  }
+
+  clear(): void {
+    this.store.clear()
+  }
+
+  getItem(key: string): string | null {
+    if (this.config.readThrows) {
+      throw new Error('模拟读取失败（SecurityError/QuotaExceeded）')
+    }
+    if (this.config.readErrorKeys?.has(key)) {
+      throw new Error(`模拟读取 ${key} 失败`)
+    }
+    return this.store.has(key) ? (this.store.get(key) as string) : null
+  }
+
+  key(index: number): string | null {
+    const keys = Array.from(this.store.keys())
+    return index >= 0 && index < keys.length ? keys[index] : null
+  }
+
+  removeItem(key: string): void {
+    if (this.config.removeThrows) {
+      throw new Error('模拟删除失败')
+    }
+    if (this.config.removeErrorKeys?.has(key)) {
+      throw new Error(`模拟删除 ${key} 失败`)
+    }
+    this.store.delete(key)
+  }
+
+  setItem(key: string, value: string): void {
+    if (this.config.writeThrows) {
+      throw new Error('模拟写入失败（QuotaExceededError）')
+    }
+    if (this.config.writeErrorKeys?.has(key)) {
+      throw new Error(`模拟写入 ${key} 失败`)
+    }
+    if (this.config.writeCorrupts) {
+      // 写入被截断，模拟存储损坏
+      this.store.set(key, value.slice(0, Math.floor(value.length / 2)))
+      return
+    }
+    this.store.set(key, value)
+  }
+
+  // 测试辅助：直接查看内部存储
+  _getRaw(key: string): string | null {
+    return this.store.has(key) ? (this.store.get(key) as string) : null
+  }
+
+  _setRaw(key: string, value: string): void {
+    this.store.set(key, value)
+  }
+
+  _has(key: string): boolean {
+    return this.store.has(key)
+  }
+
+  _clear(): void {
+    this.store.clear()
+    this.config = {}
+  }
+}
+
+// 将 mock 挂到全局 window.localStorage 上
+const mockLs = new MockLocalStorage()
+;(globalThis as Record<string, unknown>).window = {
+  get localStorage() {
+    return mockLs
+  },
+}
+
+// ========================================================================
+// 第一部分：纯逻辑自检（序列化 / 反序列化 / 校验 / 版本）
+// ========================================================================
+
+console.log('\n=== 存档模块自检 ===')
+console.log('\n--- 第一部分：纯逻辑校验 ---\n')
+
+// 1. 合法存档校验通过
+console.log('1. 合法存档校验')
+{
+  const save = makeValidSave()
+  const result = validateGameSave(save)
+  assert(result.valid, '合法存档应通过校验')
+  assert(result.errors.length === 0, '错误列表应为空')
+}
+
+// 2. 缺少 runId
+console.log('\n2. 缺少 runId')
+{
+  const save = makeValidSave() as unknown as Record<string, unknown>
+  save.runId = ''
+  const result = validateGameSave(save)
+  assert(!result.valid, '空 runId 应校验失败')
+  assert(
+    result.errors.some((e) => e.path === 'runId'),
+    '错误应包含 runId 字段',
+  )
+}
+
+// 3. 缺少必要游戏状态（state 不是对象）
+console.log('\n3. 缺少必要游戏状态')
+{
+  const save = makeValidSave() as unknown as Record<string, unknown>
+  save.state = null
+  const result = validateGameSave(save)
+  assert(!result.valid, 'state 为 null 应校验失败')
+  assert(
+    result.errors.some((e) => e.path.startsWith('state')),
+    '错误应包含 state 字段',
+  )
+}
+
+// 4. 非法 JSON
+console.log('\n4. 非法 JSON 识别')
+{
+  const result = deserializeSave('{invalid json!!!')
+  assert(result.status === 'corrupted', '非法 JSON 应返回 corrupted')
+}
+
+// 5. 不支持的 schemaVersion
+console.log('\n5. 不支持的 schemaVersion')
+{
+  const save = makeValidSave()
+  save.schemaVersion = 999
+  const serialized = serializeSave(save)
+  const result = deserializeSave(serialized)
+  assert(result.status === 'incompatible', '高版本应返回 incompatible')
+}
+
+// 6. 往返：序列化 → 反序列化
+console.log('\n6. 序列化往返')
+{
+  const original = makeValidSave()
+  const serialized = serializeSave(original)
+  const result = deserializeSave(serialized)
+  assert(result.status === 'valid', '往返后应有效')
+  if (result.status === 'valid') {
+    assert(result.data.runId === original.runId, 'runId 一致')
+    assert(result.data.state.day === original.state.day, 'day 一致')
+    assert(result.data.logs.length === original.logs.length, 'logs 长度一致')
+    assert(
+      result.data.eventChain.stepDepth === original.eventChain.stepDepth,
+      'eventChain stepDepth 一致',
+    )
+    assert(
+      result.data.state.authorProfile.penName === original.state.authorProfile.penName,
+      'authorProfile.penName 一致',
+    )
+    assert(
+      result.data.state.writerCareerProfile.totalCompletedBooks ===
+        original.state.writerCareerProfile.totalCompletedBooks,
+      'writerCareerProfile.totalCompletedBooks 一致',
+    )
+  }
+}
+
+// 7. 版本兼容检查
+console.log('\n7. 版本兼容检查')
+{
+  assert(isSchemaVersionCompatible(SAVE_SCHEMA_VERSION), '当前版本应兼容')
+  assert(!isSchemaVersionCompatible(0), '版本 0 应不兼容')
+  assert(!isSchemaVersionCompatible(999), '版本 999 应不兼容')
+}
+
+// 8. 日志数组校验
+console.log('\n8. 日志数组校验')
+{
+  const save = makeValidSave()
+  save.logs = [
+    { id: 1, day: 1, slot: 'morning' as const, kind: 'info' as const, text: '' },
+  ]
+  // 手动塞入一条有问题的日志
+  ;(save.logs as unknown as Array<Record<string, unknown>>).push({
+    id: 'not-a-number',
+    day: 'bad',
+    text: null,
+  })
+  const result = validateGameSave(save)
+  assert(!result.valid, '有问题的日志应校验失败')
+  assert(
+    result.errors.some((e) => e.path.includes('logs[1]')),
+    '错误应定位到 logs[1]',
+  )
+}
+
+// 9. endingId 校验
+console.log('\n9. endingId 校验')
+{
+  const save = makeValidSave()
+  save.endingId = 'FINANCIAL_FREEDOM'
+  const result = validateGameSave(save)
+  assert(result.valid, '字符串 endingId 应通过校验')
+
+  const save2 = makeValidSave() as unknown as Record<string, unknown>
+  save2.endingId = 123
+  const result2 = validateGameSave(save2)
+  assert(!result2.valid, '数字 endingId 应校验失败')
+}
+
+// 10. careerProjects 深度校验
+console.log('\n10. careerProjects 深度校验')
+{
+  const save = makeValidSave()
+  // 使用 WriterProject 完整对象作为测试数据（通过类型断言绕过基类限制）
+  const testProject = {
+    id: 'proj-1',
+    professionType: 'WRITER',
+    title: '测试书',
+      phase: 'DEVELOPING',
+      dayCreated: 1,
+      quality: 50,
+      commerciality: 60,
+      memeValue: 40,
+      progress: 100,
+      totalWorkload: 1000,
+      metrics: {
+        viewsOrReaders: 0,
+        fanConversionRate: 0,
+        hypeDecay: 0,
+        currentHype: 0,
+      },
+      stats: {
+        totalRevenue: 0,
+        totalFansGained: 0,
+        bugOrControversy: 0,
+        ipValue: 0,
+      },
+      platformId: 'ZHONGDIAN',
+      stage: 'CONCEPT',
+      penName: '测试',
+      genre: 'XUANHUAN',
+      tags: [],
+      gimmick: 'test',
+      blackHorseTriggered: false,
+      wordCount: 0,
+      launchWordCount: 200000,
+      signed: false,
+      readerRetention: 0,
+      monthlyTickets: 0,
+      consecutiveDailyUpdates: 0,
+      lastUpdatedDay: 0,
+      totalChapters: 0,
+      readerMood: 0,
+      dailyWordCount: 0,
+      complexity: {
+        score: 30,
+        tier: 'SIMPLE',
+        breakdown: { genre: 10, tags: 10, gimmick: 10, overlapPenalty: 0 },
+      },
+      executionCapacity: 50,
+      growthCurve: 'STEADY',
+      activeStyleTraits: [],
+      wordOfMouth: { current: 0, primed: false, breakthroughCount: 0, activeEvangelists: 0 },
+      foreshadowingCharge: 0,
+      chaptersToClimax: 10,
+      isViralSurge: false,
+      viralSurgeDays: 0,
+      authorSkillSnapshot: {
+        prose: 10,
+        pacing: 10,
+        structure: 10,
+        marketInsight: 10,
+        domainKnowledge: {},
+      },
+      backgroundBonuses: [],
+      triggeredFanfictionChains: { blowup: false, copyright: false, payback: false },
+      forecastInvalidated: false,
+      accidentShock: 0,
+      fatTailLuck: 0,
+  }
+  save.state.careerProjects = [testProject] as unknown as typeof save.state.careerProjects
+  const result = validateGameSave(save)
+  assert(result.valid, '含有效项目的存档应通过校验')
+
+  // 破坏 careerProjects[0].id
+  const badSave = makeValidSave()
+  badSave.state.careerProjects = [
+    { id: '', professionType: 'WRITER' } as unknown as typeof badSave.state.careerProjects[0],
+  ]
+  const badResult = validateGameSave(badSave)
+  assert(!badResult.valid, 'id 为空的项目应校验失败')
+  assert(
+    badResult.errors.some((e) => e.path === 'state.careerProjects[0].id'),
+    '错误应定位到 careerProjects[0].id',
+  )
+}
+
+// 11. pendingYearSummary 校验
+console.log('\n11. pendingYearSummary 深度校验')
+{
+  const save = makeValidSave()
+  save.state.pendingYearSummary = {
+    year: 1,
+    startDay: 1,
+    endDay: 60,
+    startStats: {
+      savings: 5000, health: 80, energy: 100, stress: 30,
+      familyApproval: 60, influence: 5, fans: 0,
+    },
+    endStats: {
+      savings: 6000, health: 75, energy: 90, stress: 40,
+      familyApproval: 65, influence: 10, fans: 100,
+    },
+    startWriterProfile: save.state.writerCareerProfile,
+    endWriterProfile: save.state.writerCareerProfile,
+    stats: {
+      wordCountDelta: 50000,
+      revenueDelta: 1000,
+      fansDelta: 100,
+      completedBooks: 0,
+      abandonedBooks: 0,
+    },
+    majorEvents: [],
+    nextYearForecast: '',
+  }
+  const result = validateGameSave(save)
+  assert(result.valid, '含有效年度总结的存档应通过校验')
+}
+
+// ========================================================================
+// 第二部分：存储层测试（localStorage 模拟）
+// ========================================================================
+
+console.log('\n--- 第二部分：存储层读写测试 ---\n')
+
+function clearStorage(): void {
+  mockLs._clear()
+}
+
+// 场景 1：主存档有效，临时存档不存在
+console.log('场景 1：主存档有效，临时存档不存在')
+{
+  clearStorage()
+  const save = makeValidSave()
+  const serialized = serializeSave(save)
+  mockLs._setRaw(SAVE_KEY_PRIMARY, serialized)
+
+  const result = loadSave()
+  assert(result.status === 'valid', '加载状态应为 valid')
+  if (result.status === 'valid') {
+    assert(result.data.runId === save.runId, 'runId 正确')
+  }
+  assert(!mockLs._has(SAVE_KEY_TEMP), '临时 key 不应存在')
+}
+
+// 场景 2：主存档损坏，临时存档有效
+console.log('\n场景 2：主存档损坏，临时存档有效')
+{
+  clearStorage()
+  const save = makeValidSave()
+  const serialized = serializeSave(save)
+  mockLs._setRaw(SAVE_KEY_PRIMARY, 'corrupted{{{')
+  mockLs._setRaw(SAVE_KEY_TEMP, serialized)
+
+  const result = loadSave()
+  assert(result.status === 'valid', '应从临时存档恢复并返回 valid')
+  if (result.status === 'valid') {
+    assert(result.data.runId === save.runId, 'runId 正确')
+  }
+  // 临时存档应被提升为主存档
+  const primaryRaw = mockLs._getRaw(SAVE_KEY_PRIMARY)
+  assert(primaryRaw === serialized, '临时存档已提升为主存档')
+}
+
+// 场景 3：主存档有效，临时存档损坏
+console.log('\n场景 3：主存档有效，临时存档损坏')
+{
+  clearStorage()
+  const save = makeValidSave()
+  const serialized = serializeSave(save)
+  mockLs._setRaw(SAVE_KEY_PRIMARY, serialized)
+  mockLs._setRaw(SAVE_KEY_TEMP, 'garbage-data{{{')
+
+  const result = loadSave()
+  assert(result.status === 'valid', '主存档有效时直接返回 valid')
+  if (result.status === 'valid') {
+    assert(result.data.runId === save.runId, 'runId 正确')
+  }
+  // 主存档保持不变
+  assert(mockLs._getRaw(SAVE_KEY_PRIMARY) === serialized, '主存档未被修改')
+}
+
+// 场景 4：主存档和临时存档都损坏
+console.log('\n场景 4：主存档和临时存档都损坏')
+{
+  clearStorage()
+  mockLs._setRaw(SAVE_KEY_PRIMARY, 'corrupt-primary')
+  mockLs._setRaw(SAVE_KEY_TEMP, 'corrupt-temp')
+
+  const result = loadSave()
+  assert(result.status === 'corrupted', '双损坏应返回 corrupted')
+  // 损坏存档仍保留在存储中（不被自动删除）
+  assert(mockLs._has(SAVE_KEY_PRIMARY), '主存档损坏数据仍保留')
+  assert(mockLs._has(SAVE_KEY_TEMP), '临时存档损坏数据仍保留')
+}
+
+// 场景 5：主存档版本不兼容，临时存档有效
+console.log('\n场景 5：主存档版本不兼容，临时存档有效')
+{
+  clearStorage()
+  const highVerSave = makeValidSave()
+  highVerSave.schemaVersion = 999
+  const highVerSerialized = serializeSave(highVerSave)
+
+  const normalSave = makeValidSave()
+  normalSave.runId = 'run-temp-valid'
+  const tempSerialized = serializeSave(normalSave)
+
+  mockLs._setRaw(SAVE_KEY_PRIMARY, highVerSerialized)
+  mockLs._setRaw(SAVE_KEY_TEMP, tempSerialized)
+
+  const result = loadSave()
+  // 版本不兼容直接返回，不回退到临时 key
+  assert(result.status === 'incompatible', '版本不兼容应直接返回 incompatible')
+  if (result.status === 'incompatible') {
+    assert(result.schemaVersion === 999, '应返回不兼容的版本号')
+  }
+  // 高版本存档保留，不被覆盖
+  assert(mockLs._has(SAVE_KEY_PRIMARY), '不兼容的主存档仍保留')
+  assert(
+    mockLs._getRaw(SAVE_KEY_PRIMARY) === highVerSerialized,
+    '不兼容的主存档数据未被修改',
+  )
+}
+
+// 场景 6：写入临时 key 失败
+console.log('\n场景 6：写入临时 key 失败')
+{
+  clearStorage()
+  const oldSave = makeValidSave()
+  oldSave.runId = 'run-old-save'
+  const oldSerialized = serializeSave(oldSave)
+  mockLs._setRaw(SAVE_KEY_PRIMARY, oldSerialized)
+
+  mockLs.config.writeThrows = true
+
+  const newSave = makeValidSave()
+  newSave.runId = 'run-new-save'
+  const writeResult = writeSave(newSave)
+  assert(writeResult.status === 'error', '写入失败应返回 error')
+
+  mockLs.config.writeThrows = false
+
+  // 旧主存档仍然保留
+  assert(mockLs._has(SAVE_KEY_PRIMARY), '旧主存档仍存在')
+  const loadResult = loadSave()
+  assert(loadResult.status === 'valid', '仍能加载旧存档')
+  if (loadResult.status === 'valid') {
+    assert(loadResult.data.runId === 'run-old-save', '旧存档 runId 不变')
+  }
+}
+
+// 场景 7：临时 key 写入成功，但回读失败
+console.log('\n场景 7：临时 key 写入成功，但回读失败')
+{
+  clearStorage()
+  const oldSave = makeValidSave()
+  oldSave.runId = 'run-old-7'
+  const oldSerialized = serializeSave(oldSave)
+  mockLs._setRaw(SAVE_KEY_PRIMARY, oldSerialized)
+
+  // 临时 key 读取时抛异常（写入正常，回读失败）
+  mockLs.config.readErrorKeys = new Set([SAVE_KEY_TEMP])
+
+  const newSave = makeValidSave()
+  newSave.runId = 'run-new-7'
+  const writeResult = writeSave(newSave)
+  assert(writeResult.status === 'error', '回读失败应返回 error')
+
+  mockLs.config.readErrorKeys = undefined
+
+  // 旧主存档仍然保留
+  const loadResult = loadSave()
+  assert(loadResult.status === 'valid', '仍能加载旧存档')
+  if (loadResult.status === 'valid') {
+    assert(loadResult.data.runId === 'run-old-7', '旧存档 runId 不变')
+  }
+  // 临时 key 应被清理（writeSave 在回读失败后会尝试删除）
+  assert(!mockLs._has(SAVE_KEY_TEMP), '回读失败后临时 key 被清理')
+}
+
+// 场景 8：写入主 key 失败，旧主存档仍然保留
+console.log('\n场景 8：写入主 key 失败，旧主存档仍然保留')
+{
+  clearStorage()
+  const oldSave = makeValidSave()
+  oldSave.runId = 'run-old-8'
+  const oldSerialized = serializeSave(oldSave)
+  mockLs._setRaw(SAVE_KEY_PRIMARY, oldSerialized)
+
+  // 只让主 key 写入失败（临时 key 成功）
+  mockLs.config.writeErrorKeys = new Set([SAVE_KEY_PRIMARY])
+
+  const newSave = makeValidSave()
+  newSave.runId = 'run-new-8'
+  const newSerialized = serializeSave(newSave)
+  const writeResult = writeSave(newSave)
+  assert(writeResult.status === 'error', '主 key 写入失败应返回 error')
+
+  mockLs.config.writeErrorKeys = undefined
+
+  // 旧主存档仍然保留
+  assert(mockLs._getRaw(SAVE_KEY_PRIMARY) === oldSerialized, '旧主存档数据未被覆盖')
+  // 临时 key 里有新数据（下次读取会自动提升）
+  assert(mockLs._has(SAVE_KEY_TEMP), '临时 key 保留新数据')
+  assert(mockLs._getRaw(SAVE_KEY_TEMP) === newSerialized, '临时 key 数据正确')
+}
+
+// 场景 9：主 key 写入成功，但删除临时 key 失败
+console.log('\n场景 9：主 key 写入成功，但删除临时 key 失败')
+{
+  clearStorage()
+  const oldSave = makeValidSave()
+  oldSave.runId = 'run-old-9'
+  mockLs._setRaw(SAVE_KEY_PRIMARY, serializeSave(oldSave))
+
+  // 删除临时 key 时失败
+  mockLs.config.removeErrorKeys = new Set([SAVE_KEY_TEMP])
+
+  const newSave = makeValidSave()
+  newSave.runId = 'run-new-9'
+  const newSerialized = serializeSave(newSave)
+  const writeResult = writeSave(newSave)
+  // 当前实现：删除临时 key 失败不报错（因为主 key 已经写入成功了）
+  assert(writeResult.status === 'success', '主 key 写入成功即返回 success')
+
+  mockLs.config.removeErrorKeys = undefined
+
+  // 主存档已更新
+  assert(mockLs._getRaw(SAVE_KEY_PRIMARY) === newSerialized, '主存档已更新')
+  // 临时 key 还在（因为删除失败）
+  assert(mockLs._has(SAVE_KEY_TEMP), '临时 key 因删除失败而残留')
+  // 但这不影响数据正确性，因为主 key 已经是新数据
+  const loadResult = loadSave()
+  assert(loadResult.status === 'valid', '加载仍正常')
+  if (loadResult.status === 'valid') {
+    assert(loadResult.data.runId === 'run-new-9', '加载的是新存档')
+  }
+}
+
+// 场景 10：localStorage 不可用
+console.log('\n场景 10：localStorage 不可用')
+{
+  clearStorage()
+  // 让所有操作都抛异常（模拟隐私模式/禁用存储）
+  mockLs.config.writeThrows = true
+  mockLs.config.readThrows = true
+  mockLs.config.removeThrows = true
+
+  assert(!isLocalStorageAvailable(), 'isLocalStorageAvailable 应返回 false')
+
+  const loadResult = loadSave()
+  assert(loadResult.status === 'read_error', '加载应返回 read_error')
+  assert(
+    loadResult.status !== 'corrupted' && loadResult.status !== 'incompatible',
+    'read_error 不应与 corrupted/incompatible 混淆',
+  )
+
+  const writeResult = writeSave(makeValidSave())
+  assert(writeResult.status === 'error', '写入应返回 error')
+
+  mockLs.config = {}
+}
+
+// 场景 11：读取过程中抛出异常
+console.log('\n场景 11：读取过程中抛出异常')
+{
+  clearStorage()
+  const save = makeValidSave()
+  mockLs._setRaw(SAVE_KEY_PRIMARY, serializeSave(save))
+
+  // 模拟读取主 key 时抛异常
+  mockLs.config.readErrorKeys = new Set([SAVE_KEY_PRIMARY])
+
+  const result = loadSave()
+  assert(result.status === 'read_error', '读取异常应返回 read_error')
+  assert(
+    result.status !== 'corrupted',
+    '读取异常不应返回 corrupted',
+  )
+
+  mockLs.config.readErrorKeys = undefined
+}
+
+// 场景 12：损坏存档不会被自动覆盖或删除
+console.log('\n场景 12：损坏存档不会被自动覆盖或删除')
+{
+  clearStorage()
+  const corruptedData = '{this is definitely not valid json'
+  mockLs._setRaw(SAVE_KEY_PRIMARY, corruptedData)
+
+  // 第一次加载：返回 corrupted
+  const firstLoad = loadSave()
+  assert(firstLoad.status === 'corrupted', '损坏存档返回 corrupted')
+
+  // 损坏数据仍然保留
+  assert(
+    mockLs._getRaw(SAVE_KEY_PRIMARY) === corruptedData,
+    '损坏存档未被自动删除或覆盖',
+  )
+
+  // 第二次加载：仍然返回 corrupted，数据仍在
+  const secondLoad = loadSave()
+  assert(secondLoad.status === 'corrupted', '再次加载仍返回 corrupted')
+  assert(
+    mockLs._getRaw(SAVE_KEY_PRIMARY) === corruptedData,
+    '多次加载后损坏存档仍保留',
+  )
+}
+
+// 场景 13：主存档不存在，临时存档有效
+console.log('\n场景 13：主存档不存在，临时存档有效')
+{
+  clearStorage()
+  const save = makeValidSave()
+  save.runId = 'run-temp-only-valid'
+  const serialized = serializeSave(save)
+  mockLs._setRaw(SAVE_KEY_TEMP, serialized)
+
+  const result = loadSave()
+  assert(result.status === 'valid', '仅有临时有效存档应返回 valid')
+  if (result.status === 'valid') {
+    assert(result.data.runId === 'run-temp-only-valid', 'runId 正确')
+  }
+  // 临时存档应被提升为主存档
+  assert(mockLs._has(SAVE_KEY_PRIMARY), '临时存档已提升为主存档')
+}
+
+// 场景 14：主存档不存在，临时存档损坏
+console.log('\n场景 14：主存档不存在，临时存档损坏')
+{
+  clearStorage()
+  const corruptedData = 'broken-temp-data{{{'
+  mockLs._setRaw(SAVE_KEY_TEMP, corruptedData)
+
+  const result = loadSave()
+  assert(result.status === 'corrupted', '仅有损坏临时存档应返回 corrupted')
+  assert(
+    result.status !== 'empty',
+    '不得将损坏的临时存档误判为空档',
+  )
+  // 损坏数据保留
+  assert(mockLs._has(SAVE_KEY_TEMP), '损坏的临时存档仍保留')
+  assert(
+    mockLs._getRaw(SAVE_KEY_TEMP) === corruptedData,
+    '损坏的临时存档数据未被修改',
+  )
+}
+
+// 场景 15：主存档不存在，临时存档版本不兼容
+console.log('\n场景 15：主存档不存在，临时存档版本不兼容')
+{
+  clearStorage()
+  const highVerSave = makeValidSave()
+  highVerSave.schemaVersion = 999
+  highVerSave.runId = 'run-high-ver-temp'
+  const serialized = serializeSave(highVerSave)
+  mockLs._setRaw(SAVE_KEY_TEMP, serialized)
+
+  const result = loadSave()
+  assert(
+    result.status === 'incompatible',
+    '不兼容的临时存档应返回 incompatible',
+  )
+  assert(
+    result.status !== 'empty',
+    '不得将不兼容的临时存档误判为空档',
+  )
+  if (result.status === 'incompatible') {
+    assert(result.schemaVersion === 999, '应返回不兼容的版本号')
+  }
+  // 不兼容存档保留
+  assert(mockLs._has(SAVE_KEY_TEMP), '不兼容的临时存档仍保留')
+  assert(
+    mockLs._getRaw(SAVE_KEY_TEMP) === serialized,
+    '不兼容的临时存档数据未被修改',
+  )
+  // 主存档位置仍为空（不自动提升不兼容版本）
+  assert(!mockLs._has(SAVE_KEY_PRIMARY), '主存档位置仍为空')
+}
+
+// 场景 16：主存档和临时存档都不存在
+console.log('\n场景 16：主存档和临时存档都不存在')
+{
+  clearStorage()
+  const result = loadSave()
+  assert(result.status === 'empty', '双空应返回 empty')
+}
+
+// 场景 17：主存档有效，临时存档不兼容
+console.log('\n场景 17：主存档有效，临时存档不兼容')
+{
+  clearStorage()
+  const validSave = makeValidSave()
+  validSave.runId = 'run-primary-valid-17'
+  const validSerialized = serializeSave(validSave)
+
+  const highVerSave = makeValidSave()
+  highVerSave.schemaVersion = 999
+  const highVerSerialized = serializeSave(highVerSave)
+
+  mockLs._setRaw(SAVE_KEY_PRIMARY, validSerialized)
+  mockLs._setRaw(SAVE_KEY_TEMP, highVerSerialized)
+
+  const result = loadSave()
+  assert(
+    result.status === 'valid',
+    '主存档有效时直接返回 valid，忽略临时存档状态',
+  )
+  if (result.status === 'valid') {
+    assert(result.data.runId === 'run-primary-valid-17', '主存档 runId 正确')
+  }
+  // 主存档未变
+  assert(mockLs._getRaw(SAVE_KEY_PRIMARY) === validSerialized, '主存档未被修改')
+  // 不兼容的临时存档仍保留
+  assert(mockLs._has(SAVE_KEY_TEMP), '不兼容的临时存档仍保留')
+}
+
+// 场景 18：hasSave 遇到损坏数据
+console.log('\n场景 18：hasSave 遇到损坏数据')
+{
+  clearStorage()
+  // 只有损坏的主存档
+  mockLs._setRaw(SAVE_KEY_PRIMARY, 'garbage{{{')
+  assert(!hasSave(), '只有损坏主存档时 hasSave 应为 false')
+
+  // 只有损坏的临时存档
+  mockLs._clear()
+  mockLs._setRaw(SAVE_KEY_TEMP, 'garbage{{{')
+  assert(!hasSave(), '只有损坏临时存档时 hasSave 应为 false')
+
+  // 两个都损坏
+  mockLs._setRaw(SAVE_KEY_PRIMARY, 'garbage1{{{')
+  mockLs._setRaw(SAVE_KEY_TEMP, 'garbage2{{{')
+  assert(!hasSave(), '双损坏时 hasSave 应为 false')
+}
+
+// 场景 19：hasSave 遇到不兼容版本
+console.log('\n场景 19：hasSave 遇到不兼容版本')
+{
+  clearStorage()
+  const highVerSave = makeValidSave()
+  highVerSave.schemaVersion = 999
+  const serialized = serializeSave(highVerSave)
+
+  // 主存档不兼容
+  mockLs._setRaw(SAVE_KEY_PRIMARY, serialized)
+  assert(!hasSave(), '主存档不兼容时 hasSave 应为 false')
+
+  // 临时存档不兼容，主存档不存在
+  mockLs._clear()
+  mockLs._setRaw(SAVE_KEY_TEMP, serialized)
+  assert(!hasSave(), '只有不兼容临时存档时 hasSave 应为 false')
+
+  // 主存档不兼容 + 临时存档不兼容
+  mockLs._setRaw(SAVE_KEY_PRIMARY, serialized)
+  assert(!hasSave(), '双不兼容时 hasSave 应为 false')
+
+  // 原始数据未被修改
+  assert(mockLs._has(SAVE_KEY_PRIMARY), '不兼容主存档未被 hasSave 删除')
+  assert(mockLs._has(SAVE_KEY_TEMP), '不兼容临时存档未被 hasSave 删除')
+}
+
+// ========================================================================
+// 第二部分补充：校验器关键数据结构测试
+// ========================================================================
+
+console.log('\n--- 第二部分补充：校验器关键结构校验 ---\n')
+
+// 校验 1：缺少关键字段的 GameEvent
+console.log('校验 1：缺少关键字段的 GameEvent')
+{
+  const save = makeValidSave()
+  // 缺少 type/tone/effects 的事件
+  save.pendingEvent = {
+    id: 1,
+    title: '测试事件',
+  } as unknown as typeof save.pendingEvent
+  const result = validateGameSave(save)
+  assert(!result.valid, '缺少关键字段的 GameEvent 应校验失败')
+  assert(
+    result.errors.some((e) => e.path.includes('type')),
+    '错误应包含 type 字段',
+  )
+  assert(
+    result.errors.some((e) => e.path.includes('tone')),
+    '错误应包含 tone 字段',
+  )
+  assert(
+    result.errors.some((e) => e.path.includes('effects')),
+    '错误应包含 effects 字段',
+  )
+}
+
+// 校验 2：不合法的 LogEntry slot/kind
+console.log('\n校验 2：不合法的 LogEntry slot/kind')
+{
+  const save = makeValidSave()
+  save.logs = [
+    { id: 1, day: 1, slot: 'invalid_slot' as unknown as 'morning', kind: 'invalid_kind' as unknown as 'info', text: 'test' },
+  ]
+  const result = validateGameSave(save)
+  assert(!result.valid, '非法 slot/kind 的日志应校验失败')
+  assert(
+    result.errors.some((e) => e.path.includes('slot')),
+    '错误应包含 slot 字段',
+  )
+  assert(
+    result.errors.some((e) => e.path.includes('kind')),
+    '错误应包含 kind 字段',
+  )
+}
+
+// 校验 3：关键字段缺失的 YearSummary
+console.log('\n校验 3：关键字段缺失的 YearSummary')
+{
+  const save = makeValidSave()
+  // 缺少 startWriterProfile、endWriterProfile、majorEvents、nextYearForecast
+  save.state.pendingYearSummary = {
+    year: 1,
+    startDay: 1,
+    endDay: 60,
+    startStats: save.state.stats,
+    endStats: save.state.stats,
+    stats: {
+      wordCountDelta: 0,
+      revenueDelta: 0,
+      fansDelta: 0,
+      completedBooks: 0,
+      abandonedBooks: 0,
+    },
+  } as unknown as typeof save.state.pendingYearSummary
+  const result = validateGameSave(save)
+  assert(!result.valid, '缺少关键字段的 YearSummary 应校验失败')
+  assert(
+    result.errors.some((e) => e.path.includes('startWriterProfile')),
+    '错误应包含 startWriterProfile',
+  )
+  assert(
+    result.errors.some((e) => e.path.includes('endWriterProfile')),
+    '错误应包含 endWriterProfile',
+  )
+  assert(
+    result.errors.some((e) => e.path.includes('majorEvents')),
+    '错误应包含 majorEvents',
+  )
+  assert(
+    result.errors.some((e) => e.path.includes('nextYearForecast')),
+    '错误应包含 nextYearForecast',
+  )
+}
+
+// 校验 4：EventChain 不一致状态
+console.log('\n校验 4：EventChain 不一致状态')
+{
+  // chainId 存在但 stepId 为 null
+  const save1 = makeValidSave()
+  save1.eventChain = { chainId: 'some-chain', stepId: null, stepDepth: 1 }
+  const r1 = validateGameSave(save1)
+  assert(!r1.valid, 'chainId 存在但 stepId 为 null 应校验失败')
+  assert(
+    r1.errors.some((e) => e.path === 'eventChain'),
+    '错误应定位到 eventChain',
+  )
+
+  // chainId 为 null 但 stepId 存在
+  const save2 = makeValidSave()
+  save2.eventChain = { chainId: null, stepId: 'some-step', stepDepth: 0 }
+  const r2 = validateGameSave(save2)
+  assert(!r2.valid, 'chainId 为 null 但 stepId 存在应校验失败')
+
+  // chainId 为 null 但 stepDepth 不为 0
+  const save3 = makeValidSave()
+  save3.eventChain = { chainId: null, stepId: null, stepDepth: 5 }
+  const r3 = validateGameSave(save3)
+  assert(!r3.valid, '无事件链但 stepDepth 非 0 应校验失败')
+
+  // stepDepth 为负数
+  const save4 = makeValidSave()
+  save4.eventChain = { chainId: 'c', stepId: 's', stepDepth: -1 }
+  const r4 = validateGameSave(save4)
+  assert(!r4.valid, 'stepDepth 为负数应校验失败')
+
+  // 正常空状态（null/null/0）
+  const save5 = makeValidSave()
+  save5.eventChain = { chainId: null, stepId: null, stepDepth: 0 }
+  const r5 = validateGameSave(save5)
+  assert(r5.valid, '正常空状态的事件链应通过校验')
+
+  // 正常进行中状态
+  const save6 = makeValidSave()
+  save6.eventChain = { chainId: 'chain-1', stepId: 'step-1', stepDepth: 2 }
+  const r6 = validateGameSave(save6)
+  assert(r6.valid, '正常进行中的事件链应通过校验')
+}
+
+// 校验 5：完整合法的存档仍通过
+console.log('\n校验 5：完整合法存档（含 pendingEvent 和 YearSummary）仍通过')
+{
+  const save = makeValidSave()
+  // 添加一个合法的 pendingEvent
+  save.pendingEvent = {
+    id: 100,
+    type: 'reality_punch',
+    title: '现实的铁拳',
+    icon: '💥',
+    tone: 'bad',
+    text: '你被现实狠狠揍了一拳',
+    effects: ['存款 -500', '压力 +20'],
+    options: [
+      { text: '忍了' },
+      { text: '反击' },
+    ],
+  }
+  // 添加完整的 YearSummary
+  save.state.pendingYearSummary = {
+    year: 1,
+    startDay: 1,
+    endDay: 60,
+    startStats: { ...save.state.stats },
+    endStats: { ...save.state.stats, savings: 6000 },
+    startWriterProfile: { ...save.state.writerCareerProfile },
+    endWriterProfile: {
+      ...save.state.writerCareerProfile,
+      totalCompletedBooks: 1,
+    },
+    stats: {
+      wordCountDelta: 100000,
+      revenueDelta: 5000,
+      fansDelta: 500,
+      completedBooks: 1,
+      abandonedBooks: 0,
+    },
+    majorEvents: ['第一本书完本', '签约成功'],
+    nextYearForecast: '市场持续火热',
+  }
+  // 进行中的事件链
+  save.eventChain = { chainId: 'encounter-1', stepId: 'intro', stepDepth: 1 }
+
+  const result = validateGameSave(save)
+  assert(result.valid, '含完整数据的合法存档应通过校验')
+  assert(result.errors.length === 0, '不应有任何错误')
+}
+
+// 校验 6：YearSummary.majorEvents 必须是字符串数组
+console.log('\n校验 6：YearSummary.majorEvents 元素类型')
+{
+  function makeSaveWithMajorEvent(value: unknown) {
+    const save = makeValidSave()
+    save.state.pendingYearSummary = {
+      year: 1,
+      startDay: 1,
+      endDay: 60,
+      startStats: { ...save.state.stats },
+      endStats: { ...save.state.stats },
+      startWriterProfile: { ...save.state.writerCareerProfile },
+      endWriterProfile: { ...save.state.writerCareerProfile },
+      stats: { wordCountDelta: 0, revenueDelta: 0, fansDelta: 0, completedBooks: 0, abandonedBooks: 0 },
+      majorEvents: [value] as unknown as string[],
+      nextYearForecast: '',
+    }
+    return save
+  }
+
+  const numberResult = validateGameSave(makeSaveWithMajorEvent(123))
+  assert(!numberResult.valid, 'majorEvents 含数字元素时应失败')
+  assert(numberResult.errors.some((e) => e.path.endsWith('majorEvents[0]')), 'majorEvents 错误应定位到具体元素索引')
+
+  const nullResult = validateGameSave(makeSaveWithMajorEvent(null))
+  assert(!nullResult.valid, 'majorEvents 含 null 元素时应失败')
+
+  const objectResult = validateGameSave(makeSaveWithMajorEvent({ event: 'bad' }))
+  assert(!objectResult.valid, 'majorEvents 含对象元素时应失败')
+}
+
+// 校验 7：GameEvent.effects 必须是字符串数组
+console.log('\n校验 7：GameEvent.effects 元素类型')
+{
+  function makeSaveWithEffect(value: unknown) {
+    const save = makeValidSave()
+    save.pendingEvent = {
+      id: 1,
+      type: 'reality_punch',
+      title: '测试事件',
+      icon: '!',
+      tone: 'neutral',
+      text: '测试',
+      effects: [value] as unknown as string[],
+      options: [],
+    }
+    return save
+  }
+
+  const numberResult = validateGameSave(makeSaveWithEffect(123))
+  assert(!numberResult.valid, 'effects 含数字元素时应失败')
+  assert(numberResult.errors.some((e) => e.path.endsWith('effects[0]')), 'effects 错误应定位到具体元素索引')
+
+  const booleanResult = validateGameSave(makeSaveWithEffect(false))
+  assert(!booleanResult.valid, 'effects 含布尔元素时应失败')
+}
+
+// 校验 8：事件链标识不允许空字符串
+console.log('\n校验 8：eventChain chainId / stepId 非空')
+{
+  const emptyChain = makeValidSave()
+  emptyChain.eventChain = { chainId: '', stepId: 'step-1', stepDepth: 1 }
+  const chainResult = validateGameSave(emptyChain)
+  assert(!chainResult.valid, '空 chainId 应校验失败')
+  assert(chainResult.errors.some((e) => e.path.endsWith('.chainId')), '空 chainId 应报告对应字段')
+
+  const emptyStep = makeValidSave()
+  emptyStep.eventChain = { chainId: 'chain-1', stepId: '', stepDepth: 1 }
+  const stepResult = validateGameSave(emptyStep)
+  assert(!stepResult.valid, '空 stepId 应校验失败')
+  assert(stepResult.errors.some((e) => e.path.endsWith('.stepId')), '空 stepId 应报告对应字段')
+
+  const bothEmpty = makeValidSave()
+  bothEmpty.eventChain = { chainId: '', stepId: '', stepDepth: 1 }
+  assert(!validateGameSave(bothEmpty).valid, 'chainId 与 stepId 同时为空应校验失败')
+}
+
+// 校验 9：stepDepth 必须是非负整数
+console.log('\n校验 9：eventChain.stepDepth 整数检查')
+{
+  const fractionalSave = makeValidSave()
+  fractionalSave.eventChain = { chainId: 'chain-1', stepId: 'step-1', stepDepth: 2.5 }
+  const fractionalResult = validateGameSave(fractionalSave)
+  assert(!fractionalResult.valid, '小数 stepDepth 应校验失败')
+  assert(fractionalResult.errors.some((e) => e.path.endsWith('.stepDepth') && e.message.includes('整数')), '小数 stepDepth 应提示必须是整数')
+
+  const integerSave = makeValidSave()
+  integerSave.eventChain = { chainId: 'chain-1', stepId: 'step-1', stepDepth: 2 }
+  assert(validateGameSave(integerSave).valid, '非负整数 stepDepth 应通过校验')
+}
+
+// ========================================================================
+// 第三部分：runId 设计验证
+// ========================================================================
+
+console.log('\n--- 第三部分：runId 设计验证 ---\n')
+
+console.log('1. 存档结构要求 runId 非空')
+{
+  const save = makeValidSave() as unknown as Record<string, unknown>
+  save.runId = ''
+  const result = validateGameSave(save)
+  assert(!result.valid, '空 runId 校验失败')
+  save.runId = null
+  const result2 = validateGameSave(save)
+  assert(!result2.valid, 'null runId 校验失败')
+}
+
+console.log('\n2. 序列化和反序列化不会改变 runId')
+{
+  const original = makeValidSave()
+  original.runId = 'run-id-preserve-test-42'
+  const serialized = serializeSave(original)
+  const result = deserializeSave(serialized)
+  assert(result.status === 'valid', '反序列化成功')
+  if (result.status === 'valid') {
+    assert(
+      result.data.runId === 'run-id-preserve-test-42',
+      'runId 在序列化往返中保持不变',
+    )
+  }
+}
+
+console.log('\n3. 写入新存档不会意外重新生成 runId')
+{
+  clearStorage()
+  const save = makeValidSave()
+  save.runId = 'run-write-test-777'
+  const writeResult = writeSave(save)
+  assert(writeResult.status === 'success', '写入成功')
+
+  const loadResult = loadSave()
+  assert(loadResult.status === 'valid', '加载成功')
+  if (loadResult.status === 'valid') {
+    assert(
+      loadResult.data.runId === 'run-write-test-777',
+      '写后读回 runId 一致，未被重新生成',
+    )
+  }
+}
+
+console.log('\n4. runId 可作为遗产结算幂等标识（结构层面可行）')
+{
+  // 验证：同一 runId 的存档多次加载，runId 不变
+  clearStorage()
+  const save = makeValidSave()
+  save.runId = 'run-idempotent-999'
+  writeSave(save)
+
+  const r1 = loadSave()
+  const r2 = loadSave()
+  const r3 = loadSave()
+  assert(
+    r1.status === 'valid' && r2.status === 'valid' && r3.status === 'valid',
+    '三次加载均成功',
+  )
+  if (r1.status === 'valid' && r2.status === 'valid' && r3.status === 'valid') {
+    assert(
+      r1.data.runId === 'run-idempotent-999' &&
+        r2.data.runId === 'run-idempotent-999' &&
+        r3.data.runId === 'run-idempotent-999',
+      '同一存档多次读取 runId 一致，可作为幂等键',
+    )
+  }
+}
+
+// ========================================================================
+// 第四部分：其他存储操作验证
+// ========================================================================
+
+console.log('\n--- 第四部分：其他存储操作 ---\n')
+
+console.log('1. deleteSave 同时删除主 key 和临时 key')
+{
+  clearStorage()
+  mockLs._setRaw(SAVE_KEY_PRIMARY, '{}')
+  mockLs._setRaw(SAVE_KEY_TEMP, '{}')
+
+  const result = deleteSave()
+  assert(result.status === 'success', '删除成功')
+  assert(!mockLs._has(SAVE_KEY_PRIMARY), '主 key 已删除')
+  assert(!mockLs._has(SAVE_KEY_TEMP), '临时 key 已删除')
+}
+
+console.log('\n2. hasSave 存在性检查')
+{
+  clearStorage()
+  assert(!hasSave(), '空存储时 hasSave 为 false')
+
+  mockLs._setRaw(SAVE_KEY_PRIMARY, serializeSave(makeValidSave()))
+  assert(hasSave(), '有主存档时 hasSave 为 true')
+
+  mockLs._clear()
+  mockLs._setRaw(SAVE_KEY_TEMP, serializeSave(makeValidSave()))
+  assert(hasSave(), '只有临时存档时 hasSave 也为 true')
+}
+
+// ========================================================================
+// 总结
+// ========================================================================
+
+console.log(`\n=== 结果：${passed} 通过，${failed} 失败 ===\n`)
+
+if (failed > 0) {
+  process.exit(1)
+}

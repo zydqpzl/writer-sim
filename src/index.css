@@ -41,3 +41,14 @@
 .scrollbar-thin::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* 弹窗最大高度：优先使用 dvh（动态视口高度），不支持时回退到 vh */
+.modal-viewport-height {
+  max-height: 90vh;
+}
+
+@supports (height: 100dvh) {
+  .modal-viewport-height {
+    max-height: 90dvh;
+  }
+}
