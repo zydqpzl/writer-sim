@@ -61,6 +61,8 @@ export interface LegacyProfile {
   lastRunSummary?: RunSummary
   /** 已完成的总局数 */
   totalRuns: number
+  /** 已完成遗产结算的 runId 列表，用于幂等保护 */
+  settledRunIds: string[]
 }
 
 /** 开局身份定义 */
@@ -153,6 +155,9 @@ export function loadLegacyProfile(): LegacyProfile {
     unlockedAchievementIds: parsed.unlockedAchievementIds ?? [],
     lastRunSummary: parsed.lastRunSummary,
     totalRuns: parsed.totalRuns ?? 0,
+    settledRunIds: Array.isArray(parsed.settledRunIds)
+      ? parsed.settledRunIds.filter((id): id is string => typeof id === 'string')
+      : [],
   }
     }
   } catch {
@@ -166,14 +171,20 @@ export function loadLegacyProfile(): LegacyProfile {
     unlockedMemes: [],
     unlockedAchievementIds: [],
     totalRuns: 0,
+    settledRunIds: [],
   }
 }
 
-export function saveLegacyProfile(profile: LegacyProfile): void {
+export type SaveLegacyResult =
+  | { ok: true }
+  | { ok: false; error: string }
+
+export function saveLegacyProfile(profile: LegacyProfile): SaveLegacyResult {
   try {
     localStorage.setItem(LEGACY_KEY, JSON.stringify(profile))
-  } catch {
-    // ignore
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
 }
 
@@ -265,15 +276,26 @@ export function resolveKeptCards(keptCardIds: string[]): InspirationCard[] {
     .filter((c): c is InspirationCard => !!c && isCarryableCard(c))
 }
 
+/** 结算一局后更新遗产档案的结果 */
+export type SettleLegacyResult =
+  | { status: 'settled'; profile: LegacyProfile }
+  | { status: 'already_settled'; profile: LegacyProfile }
+
 /** 结算一局后更新遗产档案 */
 export function settleLegacy(
   profile: LegacyProfile,
   ending: Ending,
+  runId: string,
   carriedCardId: string | null,
   currentMemes: AuthorMeme[] = [],
   newAchievementIds: string[] = [],
   state?: GameState,
-): LegacyProfile {
+): SettleLegacyResult {
+  // 幂等判重：同一 runId 已经结算过，直接返回原档案
+  if (profile.settledRunIds.includes(runId)) {
+    return { status: 'already_settled', profile }
+  }
+
   const points = legacyPointsFor(ending)
   const unlockedEndingIds = profile.unlockedEndingIds.includes(ending.id)
     ? profile.unlockedEndingIds
@@ -310,14 +332,18 @@ export function settleLegacy(
   const lastRunSummary = state ? deriveRunSummary(state, ending) : undefined
 
   return {
-    totalLegacyPoints: newTotal,
-    unlockedEndingIds,
-    unlockedIdentityIds,
-    keptCardIds: carriedCardId ? [carriedCardId] : [],
-    unlockedMemes: Array.from(memeMap.values()),
-    unlockedAchievementIds,
-    lastRunSummary,
-    totalRuns: profile.totalRuns + 1,
+    status: 'settled',
+    profile: {
+      totalLegacyPoints: newTotal,
+      unlockedEndingIds,
+      unlockedIdentityIds,
+      keptCardIds: carriedCardId ? [carriedCardId] : [],
+      unlockedMemes: Array.from(memeMap.values()),
+      unlockedAchievementIds,
+      lastRunSummary,
+      totalRuns: profile.totalRuns + 1,
+      settledRunIds: [...profile.settledRunIds, runId],
+    },
   }
 }
 

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import type {
   ActionDef,
   ActionType,
@@ -83,6 +83,8 @@ import {
 import { PLATFORMS, getPlatformAuthorRank } from '../data/platforms'
 import { generateMarketTrend, tickMarketTrend } from '../data/marketTrends'
 import { simulatePlatformDaily } from '../engine/platformEngine'
+import { loadSave, deleteSave } from '../save/saveStorage'
+import { ENDING_BY_ID } from '../data/endings'
 import {
   abandonWriterProject,
   applyInspirationToWriterProject,
@@ -394,6 +396,85 @@ export interface StartSetup {
   keptCardIds?: string[]
 }
 
+/** 游戏启动状态
+ *
+ *  - new_game：正常新局（无存档）
+ *  - restored：成功恢复已有存档
+ *  - corrupted：存档损坏
+ *  - incompatible：存档版本不兼容
+ *  - read_error：存档读取失败
+ *  - already_settled：runId 已在遗产中结算，不得作为进行中局恢复
+ */
+export type BootStatus =
+  | 'new_game'
+  | 'restored'
+  | 'corrupted'
+  | 'incompatible'
+  | 'read_error'
+  | 'already_settled'
+
+/** 根据存档中的事件链状态重建运行时事件链
+ *
+ *  返回值中 valid=true 表示 chainId 和 stepId 都匹配，可以安全恢复。
+ *  valid=false 表示配置不存在或步骤不匹配，调用方应采用降级策略。
+ *
+ *  @internal 导出仅用于单元测试
+ */
+export function restoreEventChainState(
+  savedChainId: string | null,
+  savedStepId: string | null,
+  savedDepth: number,
+): {
+  chain: EventChain | null
+  stepId: string | null
+  depth: number
+  valid: boolean
+  reason?: string
+} {
+  if (!savedChainId) {
+    return { chain: null, stepId: null, depth: 0, valid: true }
+  }
+
+  const chain = EVENT_CHAINS[savedChainId] ?? null
+  if (!chain) {
+    return {
+      chain: null,
+      stepId: null,
+      depth: 0,
+      valid: false,
+      reason: `事件链配置不存在: ${savedChainId}`,
+    }
+  }
+
+  if (!savedStepId) {
+    return {
+      chain: null,
+      stepId: null,
+      depth: 0,
+      valid: false,
+      reason: `事件链 ${savedChainId} 缺少 stepId`,
+    }
+  }
+
+  const stepExists = chain.steps.some((s) => s.stepId === savedStepId)
+  if (!stepExists) {
+    return {
+      chain: null,
+      stepId: null,
+      depth: 0,
+      valid: false,
+      reason: `事件链 ${savedChainId} 中找不到步骤 ${savedStepId}`,
+    }
+  }
+
+  return {
+    chain,
+    stepId: savedStepId,
+    depth: savedDepth,
+    valid: true,
+  }
+}
+
 function computeStartState(
   setup: StartSetup | undefined,
   profile: LegacyProfile,
@@ -422,66 +503,223 @@ function computeStartState(
 export function useGame(initialSetup?: StartSetup) {
   const [startSetup, setStartSetup] = useState<StartSetup | undefined>(initialSetup)
   const [legacyProfile, setLegacyProfile] = useState<LegacyProfile>(() => loadLegacyProfile())
-  const { state: initialState, result: initialOpening } = (() => {
-    const s = computeStartState(startSetup, legacyProfile)
-    const { state: withOpening, result } = applyLegacyOpeningEffects(
-      s,
-      legacyProfile.lastRunSummary,
-    )
-    return { state: withOpening, result }
-  })()
 
-  const [state, setState] = useState<GameState>(initialState)
-  const [logs, setLogs] = useState<LogEntry[]>([
-    {
-      id: logIdSeed++,
-      day: 1,
-      slot: 'morning',
-      kind: 'system',
-      text: '毕业两个月试用期开始，你的自由职业生存挑战正式启动。',
-    },
-    ...initialOpening.logs.map((l) => ({
-      id: logIdSeed++,
-      day: 1,
-      slot: 'morning' as const,
-      kind: l.kind,
-      text: l.text,
-    })),
-  ])
-  const [pendingEvent, setPendingEvent] = useState<GameEvent | null>(() =>
-    initialOpening.popup
-      ? {
-          id: eventIdSeed++,
-          type: 'major_branch',
-          title: initialOpening.popup.title,
-          icon: '🌀',
-          tone: initialOpening.popup.tone,
-          text: initialOpening.popup.text,
-          effects: initialOpening.popup.effects,
+  // ====== 启动存档恢复 ======
+  // 只在首次渲染时计算一次，决定是新局还是恢复存档
+  const bootInit = useMemo(() => {
+    // 直接读取遗产档案（避免依赖 state 变量引发的 lint 警告）
+    const legacy = loadLegacyProfile()
+    // 读取存档（同步读取 localStorage）
+    const saveResult = loadSave()
+
+    if (saveResult.status === 'valid') {
+      const save = saveResult.data
+
+      // 检查 runId 是否已结算：已结算的局不能作为进行中游戏恢复
+      const settled = legacy.settledRunIds.includes(save.runId)
+      if (settled) {
+        return {
+          bootStatus: 'already_settled' as const,
+          error: `本局 runId(${save.runId}) 已完成遗产结算，不能继续游戏`,
+          saveResult,
         }
-      : null,
-  )
+      }
+
+      // 恢复事件链：校验 chainId 和 stepId 是否匹配当前配置
+      const chainState = restoreEventChainState(
+        save.eventChain.chainId,
+        save.eventChain.stepId,
+        save.eventChain.stepDepth,
+      )
+      if (!chainState.valid) {
+        console.warn(
+          '[boot] 事件链恢复失败，已安全降级为无事件链状态:',
+          chainState.reason,
+        )
+      }
+
+      // 恢复结局：根据 endingId 查找静态配置
+      const ending = save.endingId ? (ENDING_BY_ID[save.endingId] ?? null) : null
+      if (save.endingId && !ending) {
+        console.warn(
+          `[boot] 结局 ID 未找到，已忽略: ${save.endingId}`,
+        )
+      }
+
+      // 恢复 ID 种子（模块级计数器）
+      logIdSeed = save.logIdSeed
+      eventIdSeed = save.eventIdSeed
+
+      return {
+        bootStatus: 'restored' as const,
+        save,
+        chainState,
+        ending,
+      }
+    }
+
+    if (saveResult.status === 'empty') {
+      // 无存档：正常新局
+      return { bootStatus: 'new_game' as const }
+    }
+
+    // 异常状态：corrupted / incompatible / read_error
+    return {
+      bootStatus: saveResult.status as 'corrupted' | 'incompatible' | 'read_error',
+      error: saveResult.error,
+      saveResult,
+    }
+  }, []) // 仅首次渲染执行
+
+  // 新局初始状态（仅在 bootStatus 为 new_game 时使用）
+  const newGameInit = useMemo(() => {
+    if (bootInit.bootStatus !== 'new_game') return null
+    const s = computeStartState(startSetup, legacyProfile)
+    return applyLegacyOpeningEffects(s, legacyProfile.lastRunSummary)
+  }, [bootInit.bootStatus, startSetup, legacyProfile])
+
+  // ====== 状态初始化 ======
+  const [state, setState] = useState<GameState>(() => {
+    if (bootInit.bootStatus === 'restored') {
+      return bootInit.save.state
+    }
+    if (newGameInit) {
+      return newGameInit.state
+    }
+    // 异常状态：使用默认初始状态作为占位，实际由错误弹窗覆盖
+    const s = computeStartState(undefined, legacyProfile)
+    return applyLegacyOpeningEffects(s, legacyProfile.lastRunSummary).state
+  })
+
+  const [logs, setLogs] = useState<LogEntry[]>(() => {
+    if (bootInit.bootStatus === 'restored') {
+      return bootInit.save.logs
+    }
+    if (newGameInit) {
+      return [
+        {
+          id: logIdSeed++,
+          day: 1,
+          slot: 'morning',
+          kind: 'system',
+          text: '毕业两个月试用期开始，你的自由职业生存挑战正式启动。',
+        },
+        ...newGameInit.result.logs.map((l) => ({
+          id: logIdSeed++,
+          day: 1,
+          slot: 'morning' as const,
+          kind: l.kind,
+          text: l.text,
+        })),
+      ]
+    }
+    // 异常状态占位
+    return [
+      { id: logIdSeed++, day: 1, slot: 'morning', kind: 'system', text: '存档读取异常' },
+    ]
+  })
+
+  const [pendingEvent, setPendingEvent] = useState<GameEvent | null>(() => {
+    if (bootInit.bootStatus === 'restored') {
+      return bootInit.save.pendingEvent
+    }
+    if (newGameInit && newGameInit.result.popup) {
+      return {
+        id: eventIdSeed++,
+        type: 'major_branch',
+        title: newGameInit.result.popup.title,
+        icon: '🌀',
+        tone: newGameInit.result.popup.tone,
+        text: newGameInit.result.popup.text,
+        effects: newGameInit.result.popup.effects,
+      }
+    }
+    return null
+  })
 
   // 结局运行态
-  const [ending, setEnding] = useState<Ending | null>(null)
+  const [ending, setEnding] = useState<Ending | null>(() => {
+    if (bootInit.bootStatus === 'restored') {
+      return bootInit.ending ?? null
+    }
+    return null
+  })
+
+  // 本局唯一标识，用于遗产结算幂等保护
+  const [runId, setRunId] = useState<string>(() => {
+    if (bootInit.bootStatus === 'restored') {
+      return bootInit.save.runId
+    }
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
+    return `run-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+  })
+
+  // 启动状态
+  const [bootStatus, setBootStatus] = useState<BootStatus>(bootInit.bootStatus)
+
+  // 结算同步锁：防止同一事件循环中的重复调用（如双击）
+  const settleLockRef = useRef(false)
 
   // 事件链运行态
-  const [currentChain, setCurrentChain] = useState<EventChain | null>(null)
-  const [currentStepId, setCurrentStepId] = useState<string | null>(null)
-  const [stepDepth, setStepDepth] = useState(0)
+  const [currentChain, setCurrentChain] = useState<EventChain | null>(() => {
+    if (bootInit.bootStatus === 'restored') {
+      return bootInit.chainState.chain
+    }
+    return null
+  })
+  const [currentStepId, setCurrentStepId] = useState<string | null>(() => {
+    if (bootInit.bootStatus === 'restored') {
+      return bootInit.chainState.stepId
+    }
+    return null
+  })
+  const [stepDepth, setStepDepth] = useState(() => {
+    if (bootInit.bootStatus === 'restored') {
+      return bootInit.chainState.depth
+    }
+    return 0
+  })
 
-  /** 重新开始一局（可更换开局身份与携带卡牌） */
+  /** 重新开始一局（可更换开局身份与携带卡牌）
+   *
+   *  会删除旧的本局存档，避免新局被旧存档覆盖。
+   */
   const restart = useCallback(
-    (setup?: StartSetup) => {
-      logIdSeed = 1
-      eventIdSeed = 1
+    (setup?: StartSetup): { status: 'started' } | { status: 'save_error'; error: string } => {
       const nextSetup = setup ?? startSetup
-      setStartSetup(nextSetup)
+
+      // 0. 先删除旧存档（新局开始后旧存档不再有效）
+      //    删除失败立即中止：不消耗携带卡、不更新任何运行态、不生成新 runId
+      const delResult = deleteSave()
+      if (delResult.status === 'error') {
+        return { status: 'save_error', error: `删除旧存档失败：${delResult.error}` }
+      }
+
+      // 1. 先计算新局初始状态（纯计算，不提交 React state）
       const fresh = computeStartState(nextSetup, legacyProfile)
       const { state: nextState, result: opening } = applyLegacyOpeningEffects(
         fresh,
         legacyProfile.lastRunSummary,
       )
+
+      // 2. 确定是否需要消耗携带卡，并先持久化
+      const needConsume = legacyProfile.keptCardIds.length > 0
+      if (needConsume) {
+        const consumed = { ...legacyProfile, keptCardIds: [] }
+        const saveResult = saveLegacyProfile(consumed)
+        if (!saveResult.ok) {
+          // 写入失败：不提交新局，不改变 runId，不更新内存遗产档案
+          return { status: 'save_error', error: saveResult.error }
+        }
+        // 写入成功，更新内存遗产档案
+        setLegacyProfile(consumed)
+      }
+
+      // 3. 持久化成功（或无需消耗），提交新局状态
+      logIdSeed = 1
+      eventIdSeed = 1
+      setStartSetup(nextSetup)
+      setBootStatus('new_game')
       setState(nextState)
       setLogs([
         {
@@ -533,33 +771,92 @@ export function useGame(initialSetup?: StartSetup) {
       setCurrentStepId(null)
       setStepDepth(0)
 
-      // 消耗本局已使用的携带卡牌，避免刷新后重复进入 setup
-      if (legacyProfile.keptCardIds.length > 0) {
-        const consumed = { ...legacyProfile, keptCardIds: [] }
-        saveLegacyProfile(consumed)
-        setLegacyProfile(consumed)
-      }
+      // 4. 生成新的 runId 并重置结算锁
+      const newRunId = (() => {
+        if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
+        return `run-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+      })()
+      setRunId(newRunId)
+      settleLockRef.current = false
+
+      return { status: 'started' }
     },
     [startSetup, legacyProfile],
   )
 
-  /** 结算本局结局到遗产档案，并关闭结局弹窗 */
+  /** 从存档异常状态安全进入新局流程
+   *
+   *  删除旧存档并将启动状态切换为 new_game。
+   *  删除失败时保留原异常状态和原始存档，不切换 bootStatus。
+   *  不重置游戏内容——调用方应随后引导玩家完成正常的新局设置流程。
+   *  用于 corrupted / incompatible / read_error / already_settled 等异常状态。
+   */
+  const dismissSaveError = useCallback(():
+    | { status: 'ok' }
+    | { status: 'error'; error: string } => {
+    const delResult = deleteSave()
+    if (delResult.status === 'error') {
+      // 删除失败：保留原异常状态和原始存档，不切换 bootStatus
+      return { status: 'error', error: delResult.error }
+    }
+    // 删除成功：切换为 new_game，重置 ID 种子
+    setBootStatus('new_game')
+    logIdSeed = 1
+    eventIdSeed = 1
+    return { status: 'ok' }
+  }, [])
+
+  /** 结算本局结局到遗产档案
+   * 返回结算结果，供调用方决定是否推进界面。
+   */
   const settleEnding = useCallback(
-    (carriedCardId: string | null) => {
-      if (!ending) return
-      const next = settleLegacy(
+    (
+      carriedCardId: string | null,
+    ):
+      | { status: 'settled' }
+      | { status: 'already_settled' }
+      | { status: 'save_error'; error: string }
+      | { status: 'no_ending' }
+      | { status: 'in_progress' } => {
+      if (!ending) return { status: 'no_ending' }
+      if (settleLockRef.current) return { status: 'in_progress' }
+
+      // 立即加锁：同步防重入，不依赖 React state 更新
+      settleLockRef.current = true
+
+      const result = settleLegacy(
         legacyProfile,
         ending,
+        runId,
         carriedCardId,
         state.unlockedMemes,
         state.newUnlockedAchievementIds,
         state,
       )
-      saveLegacyProfile(next)
-      setLegacyProfile(next)
+
+      if (result.status === 'already_settled') {
+        // 已经结算过：关闭弹窗，保持锁定（直到新局启动）
+        // 切换为 new_game 允许玩家进入下一局设置界面（收益不会重复发放，由 settleLegacy 幂等保证）
+        setEnding(null)
+        setBootStatus('new_game')
+        return { status: 'already_settled' }
+      }
+
+      // 首次结算：尝试持久化
+      const saveResult = saveLegacyProfile(result.profile)
+      if (!saveResult.ok) {
+        // 写入失败：释放锁（允许重试），不更新内存，不关闭弹窗，不切换 bootStatus
+        settleLockRef.current = false
+        return { status: 'save_error', error: saveResult.error }
+      }
+
+      // 写入成功：更新内存遗产档案，关闭弹窗，切换到 new_game 以便进入下一局设置
+      setLegacyProfile(result.profile)
       setEnding(null)
+      setBootStatus('new_game')
+      return { status: 'settled' }
     },
-    [ending, legacyProfile, state.unlockedMemes, state.newUnlockedAchievementIds],
+    [ending, legacyProfile, runId, state],
   )
 
   const log = useCallback(
@@ -2779,12 +3076,16 @@ export function useGame(initialSetup?: StartSetup) {
     dismissEvent,
     selectEventOption,
     restart,
+    dismissSaveError,
     // 年度总结
     continueToNextYear,
     retireNow,
     // Roguelite 遗产
     legacyProfile,
     settleEnding,
+    runId,
+    // 启动状态
+    bootStatus,
     // CareerEngine：网络作家
     startWriterProject,
     applyWriterStrategy,

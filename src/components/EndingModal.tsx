@@ -13,6 +13,8 @@ interface Props {
   totalLegacyPoints: number
   /** 确认携带一张 SSR/史诗 灵感卡进入下一局；null 表示不携带 */
   onConfirm: (carriedCardId: string | null) => void
+  /** 结算失败错误信息，null/undefined 表示无错误 */
+  settleError?: string | null
 }
 
 const TAG_STYLE: Record<EndingTag, { chip: string; icon: string; headline: string }> = {
@@ -67,6 +69,7 @@ export default function EndingModal({
   legacyPointsEarned,
   totalLegacyPoints,
   onConfirm,
+  settleError,
 }: Props) {
   const style = TAG_STYLE[ending.tag]
   const points = legacyPointsFor(ending)
@@ -226,6 +229,11 @@ export default function EndingModal({
         )}
 
         <div className="mt-6 flex justify-end">
+          {settleError && (
+            <p className="mr-4 self-center text-sm text-rose-600">
+              保存失败：{settleError}，请重试
+            </p>
+          )}
           <button
             type="button"
             onClick={() => onConfirm(selectedCardId)}

@@ -72,6 +72,8 @@ export default function App() {
     debugJumpToYearEnd,
     applyMemeHomageToActiveProject,
     authorProfile,
+    bootStatus,
+    dismissSaveError,
   } = useGame()
 
   const activeProject = state.careerProjects.find(
@@ -95,6 +97,13 @@ export default function App() {
     return p && ['WRITER', 'UP_HOST', 'FILM_CREATOR'].includes(p) ? p : null
   })
   const [careerSetupOpen, setCareerSetupOpen] = useState(() => pendingProfession === null)
+
+  // 结局结算错误状态
+  const [settleError, setSettleError] = useState<string | null>(null)
+  // 新局启动错误状态（携带卡消耗写入失败）
+  const [restartError, setRestartError] = useState<string | null>(null)
+  // 存档异常弹窗操作失败错误
+  const [dismissError, setDismissError] = useState<string | null>(null)
 
   // 低频投资/消费动作：住房、装备、培训、保险、公关、身心健康、退休
   const isAssetAction = (a: ActionDef): boolean => {
@@ -623,12 +632,19 @@ export default function App() {
           pathSnapshot={pathSnapshot}
           legacyPointsEarned={legacyPointsFor(ending)}
           totalLegacyPoints={legacyProfile.totalLegacyPoints + legacyPointsFor(ending)}
+          settleError={settleError}
           onConfirm={(carriedCardId) => {
-            settleEnding(carriedCardId)
-            setSetupOpen(true)
-            localStorage.removeItem('fs-current-profession')
-            setCareerSetupOpen(true)
-            setPendingProfession(null)
+            const result = settleEnding(carriedCardId)
+            if (result.status === 'settled' || result.status === 'already_settled') {
+              setSettleError(null)
+              setSetupOpen(true)
+              localStorage.removeItem('fs-current-profession')
+              setCareerSetupOpen(true)
+              setPendingProfession(null)
+            } else if (result.status === 'save_error') {
+              setSettleError(result.error)
+            }
+            // in_progress / no_ending：不推进界面
           }}
         />
       )}
@@ -643,24 +659,83 @@ export default function App() {
         onChoose={chooseAction}
       />
 
+      {/* 存档异常提示弹窗 */}
+      {bootStatus !== 'new_game' && bootStatus !== 'restored' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="card max-w-md w-full p-6 shadow-xl">
+            <div className="mb-4 flex items-center gap-3">
+              <span className="text-3xl">
+                {bootStatus === 'already_settled' ? '📜' : '⚠️'}
+              </span>
+              <h2 className="text-lg font-semibold text-slate-800">
+                {bootStatus === 'corrupted' && '存档数据损坏'}
+                {bootStatus === 'incompatible' && '存档版本不兼容'}
+                {bootStatus === 'read_error' && '无法读取存档'}
+                {bootStatus === 'already_settled' && '本局已完成结算'}
+              </h2>
+            </div>
+            <p className="mb-3 text-sm text-slate-600">
+              {bootStatus === 'corrupted' &&
+                '存档文件已损坏，无法恢复游戏进度。原始数据已保留，请勿擅自清除浏览器存储。'}
+              {bootStatus === 'incompatible' &&
+                '当前游戏版本与存档版本不兼容，无法继续之前的游戏。你可以开始新的一局。'}
+              {bootStatus === 'read_error' &&
+                '浏览器存储读取失败，可能是隐私模式或存储权限问题。请检查浏览器设置后重试。'}
+              {bootStatus === 'already_settled' &&
+                '本局游戏已完成遗产结算并封档，不能作为进行中的游戏继续。请开启新的冒险。'}
+            </p>
+            {dismissError && (
+              <div className="mb-4 rounded-md bg-rose-50 px-3 py-2 text-xs text-rose-600">
+                删除存档失败：{dismissError}。原始存档仍保留，可重试。
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const result = dismissSaveError()
+                  if (result.status === 'ok') {
+                    setDismissError(null)
+                    setCareerSetupOpen(true)
+                  } else {
+                    setDismissError(result.error)
+                  }
+                }}
+                className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600"
+              >
+                开始新游戏
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 开局职业选择 */}
-      {careerSetupOpen && (
+      {careerSetupOpen && bootStatus === 'new_game' && (
         <CareerSelectModal
           onSelect={(profession) => {
             localStorage.setItem('fs-current-profession', profession)
             setPendingProfession(profession)
             setCareerSetupOpen(false)
             if (!setupOpen) {
-              restart({ profession })
+              const result = restart({ profession })
+              if (result.status === 'started') {
+                setRestartError(null)
+              } else if (result.status === 'save_error') {
+                // 写入失败：打开 LegacySetupModal 显示错误，让玩家重新尝试
+                setRestartError(result.error)
+                setSetupOpen(true)
+              }
             }
           }}
         />
       )}
 
       {/* 二周目开局设置（结算后或本地有待用携带卡时） */}
-      {setupOpen && pendingProfession && (
+      {setupOpen && pendingProfession && bootStatus === 'new_game' && (
         <LegacySetupModal
           legacyProfile={legacyProfile}
+          startError={restartError}
           onStart={({
             identity,
             keptCardIds,
@@ -668,10 +743,15 @@ export default function App() {
             identity: StartingIdentity
             keptCardIds: string[]
           }) => {
-            restart({ profession: pendingProfession, identity, keptCardIds })
-            setSetupOpen(false)
-            localStorage.removeItem('fs-current-profession')
-            setPendingProfession(null)
+            const result = restart({ profession: pendingProfession, identity, keptCardIds })
+            if (result.status === 'started') {
+              setRestartError(null)
+              setSetupOpen(false)
+              localStorage.removeItem('fs-current-profession')
+              setPendingProfession(null)
+            } else if (result.status === 'save_error') {
+              setRestartError(result.error)
+            }
           }}
         />
       )}

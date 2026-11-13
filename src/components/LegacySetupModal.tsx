@@ -5,6 +5,8 @@ import { resolveKeptCards, STARTING_IDENTITIES } from '../data/legacy'
 interface Props {
   legacyProfile: LegacyProfile
   onStart: (setup: { identity: StartingIdentity; keptCardIds: string[] }) => void
+  /** 新局启动失败错误信息，null/undefined 表示无错误 */
+  startError?: string | null
 }
 
 const QUALITY_CHIP: Record<
@@ -20,6 +22,7 @@ const QUALITY_CHIP: Record<
 export default function LegacySetupModal({
   legacyProfile,
   onStart,
+  startError,
 }: Props) {
   const unlockedSet = useMemo(
     () => new Set(legacyProfile.unlockedIdentityIds),
@@ -196,6 +199,11 @@ export default function LegacySetupModal({
         </div>
 
         <div className="mt-6 flex justify-end">
+          {startError && (
+            <p className="mr-4 self-center text-sm text-rose-600">
+              启动失败：{startError}，请重试
+            </p>
+          )}
           <button
             type="button"
             onClick={handleStart}

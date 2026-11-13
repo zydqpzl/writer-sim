@@ -392,7 +392,9 @@ function validateYearStartSnapshot(
 /** 校验 GameState 关键字段
  *
  *  不校验每个字段的业务范围，只确保结构完整和类型正确。
- *  重点校验最核心的字段，其他字段宽松处理（存在即可，类型大致正确）。
+ *  顶层必需字段全部检查存在性和基本类型；
+ *  嵌套对象/数组按深度分层校验（见各子函数注释）。
+ *  注意：可选 / 可空字段不会误判为错误。
  */
 function validateGameState(
   value: unknown,
@@ -404,14 +406,9 @@ function validateGameState(
     return
   }
 
-  const requiredNumberFields: Array<keyof typeof value> = ['day']
-  for (const field of requiredNumberFields) {
-    if (!isValidNumber(value[field])) {
-      errors.push({
-        path: `${basePath}.${String(field)}`,
-        message: `必须是有效数字`,
-      })
-    }
+  // ---- 基础标识字段 ----
+  if (!isValidNumber(value.day)) {
+    errors.push({ path: `${basePath}.day`, message: '必须是有效数字' })
   }
 
   if (
@@ -422,71 +419,149 @@ function validateGameState(
     errors.push({ path: `${basePath}.slot`, message: '时段值无效' })
   }
 
-  // 玩家属性（深度校验 7 个核心字段）
+  if (typeof value.professionType !== 'string') {
+    errors.push({ path: `${basePath}.professionType`, message: '必须是字符串' })
+  }
+
+  if (typeof value.location !== 'string') {
+    errors.push({ path: `${basePath}.location`, message: '必须是字符串' })
+  }
+
+  // ---- 玩家属性（深度校验 7 个核心字段） ----
   validatePlayerStats(value.stats, errors, `${basePath}.stats`)
 
-  // 作品列表（深度校验每个项目的标识与三维质量）
+  // ---- 布尔状态字段 ----
+  const booleanFields = [
+    'actedThisSlot',
+    'partTimeLock',
+    'workedToday',
+    'realityPunchTriggered',
+    'leaveUsedToday',
+    'waterModeActive',
+    'routineLeaveActive',
+  ] as const
+  for (const f of booleanFields) {
+    if (typeof value[f] !== 'boolean') {
+      errors.push({
+        path: `${basePath}.${String(f)}`,
+        message: '必须是布尔值',
+      })
+    }
+  }
+
+  // ---- 数值字段 ----
+  const numberFields = [
+    'consecutivePartTimeDays',
+    'totalPartTimeDays',
+    'subcultureReputation',
+    'examProgress',
+    'leaveTokens',
+    'waterWordsUsedToday',
+    'storedDrafts',
+    'draftsStoredToday',
+    'leaveDelaySlots',
+  ] as const
+  for (const f of numberFields) {
+    if (!isValidNumber(value[f])) {
+      errors.push({
+        path: `${basePath}.${String(f)}`,
+        message: '必须是有效数字',
+      })
+    }
+  }
+
+  // ---- 可空字符串字段 ----
+  if (value.availableEncounter !== null && typeof value.availableEncounter !== 'string') {
+    errors.push({
+      path: `${basePath}.availableEncounter`,
+      message: '必须是字符串或 null',
+    })
+  }
+
+  // ---- 字符串字段 ----
+  const stringFields = [
+    'authorRank',
+    'housingId',
+  ] as const
+  for (const f of stringFields) {
+    if (typeof value[f] !== 'string') {
+      errors.push({
+        path: `${basePath}.${String(f)}`,
+        message: '必须是字符串',
+      })
+    }
+  }
+
+  // ---- 数组字段（结构级校验，不深挖元素） ----
+  const arrayFields = [
+    'inventory',
+    'activeTraits',
+    'inspirations',
+    'unlockedMemes',
+    'ownedEquipmentIds',
+    'activeInsuranceIds',
+    'unlockedAuthorTitleIds',
+    'newUnlockedAchievementIds',
+  ] as const
+  for (const f of arrayFields) {
+    if (!Array.isArray(value[f])) {
+      errors.push({
+        path: `${basePath}.${String(f)}`,
+        message: '必须是数组',
+      })
+    }
+  }
+
+  // ---- 对象字段（结构级校验，不深挖内容） ----
+  if (!isPlainObject(value.pathScores)) {
+    errors.push({ path: `${basePath}.pathScores`, message: '必须是对象' })
+  }
+
+  if (!isPlainObject(value.marketTrend)) {
+    errors.push({ path: `${basePath}.marketTrend`, message: '必须是对象' })
+  }
+
+  // ---- 作品列表（深度校验每个项目的标识与三维质量） ----
   validateCareerProjects(
     value.careerProjects,
     errors,
     `${basePath}.careerProjects`,
   )
 
-  if (!Array.isArray(value.inventory)) {
-    errors.push({
-      path: `${basePath}.inventory`,
-      message: '灵感背包必须是数组',
-    })
-  }
-
-  if (!Array.isArray(value.activeTraits)) {
-    errors.push({
-      path: `${basePath}.activeTraits`,
-      message: '状态特质必须是数组',
-    })
-  }
-
-  // 平台生态（结构级校验 5 个子数组）
+  // ---- 平台生态（结构级校验 5 个子数组） ----
   validatePlatformEcosystem(
     value.platformEcosystem,
     errors,
     `${basePath}.platformEcosystem`,
   )
 
-  // 作者档案（五维技能 + 履历 + 进化阶段）
+  // ---- 作者档案（五维技能 + 履历 + 进化阶段） ----
   validateAuthorProfile(
     value.authorProfile,
     errors,
     `${basePath}.authorProfile`,
   )
 
-  // 作家生涯档案
+  // ---- 作家生涯档案 ----
   validateWriterCareerProfile(
     value.writerCareerProfile,
     errors,
     `${basePath}.writerCareerProfile`,
   )
 
-  // 待处理年度总结（null 或对象）
+  // ---- 待处理年度总结（null 或对象） ----
   validatePendingYearSummary(
     value.pendingYearSummary,
     errors,
     `${basePath}.pendingYearSummary`,
   )
 
-  // 年初快照
+  // ---- 年初快照 ----
   validateYearStartSnapshot(
     value.yearStartSnapshot,
     errors,
     `${basePath}.yearStartSnapshot`,
   )
-
-  if (typeof value.actedThisSlot !== 'boolean') {
-    errors.push({
-      path: `${basePath}.actedThisSlot`,
-      message: 'actedThisSlot 必须是布尔值',
-    })
-  }
 }
 
 /** 校验日志数组

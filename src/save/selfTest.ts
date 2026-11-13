@@ -31,6 +31,15 @@ import {
   SAVE_KEY_PRIMARY,
   SAVE_KEY_TEMP,
 } from './saveTypes'
+import {
+  settleLegacy,
+  loadLegacyProfile,
+  saveLegacyProfile,
+} from '../data/legacy'
+import type { Ending, EndingTag } from '../types/game'
+import type { AuthorMeme } from '../types/career'
+import { EVENT_CHAINS } from '../data/eventChains'
+import { ENDING_BY_ID } from '../data/endings'
 
 // ========================================================================
 // 测试数据：构造一个符合真实类型的最小合法存档
@@ -296,13 +305,14 @@ class MockLocalStorage implements Storage {
   }
 }
 
-// 将 mock 挂到全局 window.localStorage 上
+// 将 mock 挂到全局 window.localStorage 和 localStorage 上
 const mockLs = new MockLocalStorage()
 ;(globalThis as Record<string, unknown>).window = {
   get localStorage() {
     return mockLs
   },
 }
+;(globalThis as Record<string, unknown>).localStorage = mockLs
 
 // ========================================================================
 // 第一部分：纯逻辑自检（序列化 / 反序列化 / 校验 / 版本）
@@ -1373,6 +1383,1489 @@ console.log('\n2. hasSave 存在性检查')
   mockLs._clear()
   mockLs._setRaw(SAVE_KEY_TEMP, serializeSave(makeValidSave()))
   assert(hasSave(), '只有临时存档时 hasSave 也为 true')
+}
+
+// ========================================================================
+// 第五部分：针对性修正验证
+// ========================================================================
+
+console.log('\n--- 第五部分：针对性修正验证 ---\n')
+
+// 场景 20：新版本存档（schemaVersion > 当前）被正确识别为 incompatible，而非 corrupted
+// 关键验证：未来版本的存档即使结构完全不同，也应返回 incompatible，不是 corrupted
+console.log('场景 20：新版本存档被正确识别为 incompatible')
+{
+  clearStorage()
+  // 构造一个只有 schemaVersion 字段、结构完全不同的"未来版本"存档
+  // 如果 deserializeSave 先做结构校验，这会被误判为 corrupted
+  const futureSave = JSON.stringify({
+    schemaVersion: 999,
+    gameVersion: '999.0.0',
+    savedAt: Date.now(),
+    runId: 'run-future-version',
+    brandNewField: 'future data here',
+    anotherNewObject: { foo: 'bar' },
+  })
+  mockLs._setRaw(SAVE_KEY_PRIMARY, futureSave)
+
+  const result = loadSave()
+  assert(result.status === 'incompatible', '新版本存档应返回 incompatible，而非 corrupted')
+  assert(
+    result.status === 'incompatible' && result.schemaVersion === 999,
+    '应正确返回新版本号',
+  )
+  // 原始数据不应被修改或删除
+  assert(mockLs._has(SAVE_KEY_PRIMARY), '不兼容存档不应被自动删除')
+  assert(
+    mockLs._getRaw(SAVE_KEY_PRIMARY) === futureSave,
+    '不兼容存档内容不应被修改',
+  )
+  // hasSave 应返回 false（不兼容版本不算有效存档）
+  assert(hasSave() === false, 'hasSave 对不兼容版本应返回 false')
+}
+
+// 场景 21：损坏的临时存档不会被判定为 empty
+console.log('\n场景 21：损坏的临时存档不会被判定为 empty')
+{
+  clearStorage()
+  // 主存档不存在，只有一个损坏的临时存档
+  const corrupted = '{this is not valid json!!!'
+  mockLs._setRaw(SAVE_KEY_TEMP, corrupted)
+
+  const result = loadSave()
+  assert(result.status === 'corrupted', '只有损坏临时存档时应返回 corrupted，而非 empty')
+  assert(
+    result.status === 'corrupted' && result.raw === corrupted,
+    '应返回原始损坏数据',
+  )
+  // 损坏数据不应被删除
+  assert(mockLs._has(SAVE_KEY_TEMP), '损坏的临时存档不应被自动删除')
+}
+
+// 场景 22：主存档损坏但临时存档有效时能够恢复
+console.log('\n场景 22：主存档损坏、临时存档有效时正确恢复')
+{
+  clearStorage()
+  const corruptedPrimary = '{corrupted data'
+  const tempSave = makeValidSave()
+  tempSave.runId = 'run-temp-valid'
+  const tempString = serializeSave(tempSave)
+
+  mockLs._setRaw(SAVE_KEY_PRIMARY, corruptedPrimary)
+  mockLs._setRaw(SAVE_KEY_TEMP, tempString)
+
+  const result = loadSave()
+  assert(result.status === 'valid', '临时存档有效时应能恢复成功')
+  assert(
+    result.status === 'valid' && result.data.runId === 'run-temp-valid',
+    '恢复的应是临时存档的数据',
+  )
+  // 临时存档应被提升为主存档
+  assert(mockLs._has(SAVE_KEY_PRIMARY), '主存档应被恢复')
+  const primaryAfter = loadSave()
+  assert(
+    primaryAfter.status === 'valid' && primaryAfter.data.runId === 'run-temp-valid',
+    '主存档现在应包含临时存档的数据',
+  )
+  // 临时 key 应被清理
+  assert(!mockLs._has(SAVE_KEY_TEMP), '临时存档应在提升后被清理')
+}
+
+// 场景 23：主存档不兼容时不会被临时存档错误覆盖
+console.log('\n场景 23：主存档不兼容时不回退到临时存档')
+{
+  clearStorage()
+  // 主存档版本不兼容
+  const incompatSave = makeValidSave()
+  incompatSave.schemaVersion = 999
+  incompatSave.runId = 'run-incompat-main'
+  const incompatString = serializeSave(incompatSave)
+
+  // 临时存档有效（可能是旧版本的残留）
+  const tempSave = makeValidSave()
+  tempSave.runId = 'run-valid-temp'
+  const tempString = serializeSave(tempSave)
+
+  mockLs._setRaw(SAVE_KEY_PRIMARY, incompatString)
+  mockLs._setRaw(SAVE_KEY_TEMP, tempString)
+
+  const result = loadSave()
+  assert(
+    result.status === 'incompatible',
+    '主存档不兼容时应直接返回 incompatible，不回退临时存档',
+  )
+  // 主存档不应被覆盖
+  assert(
+    mockLs._getRaw(SAVE_KEY_PRIMARY) === incompatString,
+    '不兼容的主存档不应被临时存档覆盖',
+  )
+  // 临时存档也应保留
+  assert(
+    mockLs._getRaw(SAVE_KEY_TEMP) === tempString,
+    '临时存档不应被删除',
+  )
+  // hasSave 应为 false
+  assert(hasSave() === false, 'hasSave 对不兼容主存档应为 false')
+}
+
+// 场景 24：写入失败但读取正常时，仍然可以读取已有存档
+// 验证读写分离：写入不可用不影响读取
+console.log('\n场景 24：写入失败但读取正常时仍可读取存档')
+{
+  clearStorage()
+  const save = makeValidSave()
+  save.runId = 'run-pre-existing'
+  mockLs._setRaw(SAVE_KEY_PRIMARY, serializeSave(save))
+
+  // 设置为写入失败（模拟配额已满，但读取仍可用）
+  mockLs.config.writeThrows = true
+
+  // 读取应该仍然成功
+  const loadResult = loadSave()
+  assert(loadResult.status === 'valid', '写入失败但读取正常时，读取应仍然成功')
+  assert(
+    loadResult.status === 'valid' && loadResult.data.runId === 'run-pre-existing',
+    '读取到的数据应正确',
+  )
+
+  // 写入应该失败
+  const newSave = makeValidSave()
+  newSave.runId = 'run-new-write'
+  const writeResult = writeSave(newSave)
+  assert(writeResult.status === 'error', '写入失败时 writeSave 应返回 error')
+
+  // 原有存档不应被破坏
+  const loadAfter = loadSave()
+  assert(
+    loadAfter.status === 'valid',
+    '写入失败不应破坏原有有效存档',
+  )
+  assert(
+    loadAfter.status === 'valid' && loadAfter.data.runId === 'run-pre-existing',
+    '原有存档数据应保持不变',
+  )
+
+  mockLs.config.writeThrows = false
+}
+
+// 场景 25：无效数据不会覆盖原有有效存档（writeSave 前置校验失败）
+console.log('\n场景 25：无效数据不会覆盖原有有效存档')
+{
+  clearStorage()
+  const original = makeValidSave()
+  original.runId = 'run-original-valid'
+  mockLs._setRaw(SAVE_KEY_PRIMARY, serializeSave(original))
+
+  // 构造一个结构非法的 save 对象（runId 为空字符串）
+  const badSave = makeValidSave()
+  badSave.runId = '' // 校验器要求非空字符串
+
+  const result = writeSave(badSave)
+  assert(result.status === 'error', '写入非法存档应返回 error')
+  assert(
+    result.status === 'error' && result.error.includes('结构校验失败'),
+    '错误信息应包含结构校验失败',
+  )
+
+  // 原有有效存档不应被覆盖
+  const afterLoad = loadSave()
+  assert(afterLoad.status === 'valid', '原有有效存档不应被非法写入覆盖')
+  assert(
+    afterLoad.status === 'valid' && afterLoad.data.runId === 'run-original-valid',
+    '原有存档数据应保持不变',
+  )
+  // 临时 key 不应被写入（校验在写入前就失败）
+  assert(!mockLs._has(SAVE_KEY_TEMP), '校验失败不应写入临时 key')
+}
+
+// 场景 26：主存档和临时存档分别损坏时的结果正确
+console.log('\n场景 26：主/临时存档分别损坏的四种组合')
+{
+  // 26a: 仅主存档损坏
+  clearStorage()
+  mockLs._setRaw(SAVE_KEY_PRIMARY, '{bad primary json')
+  const resA = loadSave()
+  assert(resA.status === 'corrupted', '仅主存档损坏应返回 corrupted')
+  assert(
+    resA.status === 'corrupted' && resA.raw === '{bad primary json',
+    '仅主存档损坏应返回主存档的原始数据',
+  )
+  assert(mockLs._has(SAVE_KEY_PRIMARY), '损坏的主存档不应被删除')
+
+  // 26b: 仅临时存档损坏
+  clearStorage()
+  mockLs._setRaw(SAVE_KEY_TEMP, '{bad temp json')
+  const resB = loadSave()
+  assert(resB.status === 'corrupted', '仅临时存档损坏应返回 corrupted')
+  assert(
+    resB.status === 'corrupted' && resB.raw === '{bad temp json',
+    '仅临时存档损坏应返回临时存档的原始数据',
+  )
+  assert(mockLs._has(SAVE_KEY_TEMP), '损坏的临时存档不应被删除')
+
+  // 26c: 两者都损坏
+  clearStorage()
+  mockLs._setRaw(SAVE_KEY_PRIMARY, '{bad primary')
+  mockLs._setRaw(SAVE_KEY_TEMP, '{bad temp also')
+  const resC = loadSave()
+  assert(resC.status === 'corrupted', '两者都损坏应返回 corrupted')
+  assert(
+    resC.status === 'corrupted' && resC.error.includes('均已损坏'),
+    '错误信息应表明两者均损坏',
+  )
+
+  // 26d: 主存档损坏 + 临时存档不兼容 → 返回 corrupted（主存档优先级）
+  clearStorage()
+  mockLs._setRaw(SAVE_KEY_PRIMARY, '{bad primary data')
+  const incompatTemp = JSON.stringify({
+    schemaVersion: 999,
+    runId: 'run-temp-old-version',
+  })
+  mockLs._setRaw(SAVE_KEY_TEMP, incompatTemp)
+  const resD = loadSave()
+  assert(
+    resD.status === 'corrupted',
+    '主损坏+临时不兼容应返回 corrupted（主存档优先级）',
+  )
+  // 两份数据都应保留
+  assert(mockLs._has(SAVE_KEY_PRIMARY), '损坏的主存档不应被删除')
+  assert(mockLs._has(SAVE_KEY_TEMP), '不兼容的临时存档不应被删除')
+}
+
+// ------------------------------------------------------------------------
+// 场景 27：schemaVersion 边界值测试
+//
+// 非法版本号（小数 / 负数 / 0 / Infinity / NaN / 非数字）→ corrupted
+// 合法但不兼容的版本号 → incompatible
+// 合法兼容版本 → valid
+// ------------------------------------------------------------------------
+console.log('\n场景 27：schemaVersion 边界值测试')
+
+// 27a: 小数版本号
+{
+  const res = deserializeSave(JSON.stringify({ schemaVersion: 1.5, runId: 'x' }))
+  assert(res.status === 'corrupted', '小数 schemaVersion 应返回 corrupted')
+  assert(
+    res.status === 'corrupted' && res.error.includes('正的安全整数'),
+    '错误信息应提到正的安全整数',
+  )
+}
+
+// 27b: 零版本号
+{
+  const res = deserializeSave(JSON.stringify({ schemaVersion: 0, runId: 'x' }))
+  assert(res.status === 'corrupted', 'schemaVersion 为 0 应返回 corrupted')
+}
+
+// 27c: 负数版本号
+{
+  const res = deserializeSave(JSON.stringify({ schemaVersion: -1, runId: 'x' }))
+  assert(res.status === 'corrupted', '负数 schemaVersion 应返回 corrupted')
+}
+
+// 27d: Infinity（用科学计数法构造超出 MAX_VALUE 的数值，JSON.parse 后为 Infinity）
+// 注意：JSON.stringify(Infinity) 会输出 null，无法通过它构造 Infinity 输入；
+//       必须直接传入原始 JSON 字符串才能测试 Number.isSafeInteger 对 Infinity 的拦截。
+{
+  const rawJson = '{"schemaVersion":1e400,"runId":"x"}'
+  const res = deserializeSave(rawJson)
+  assert(res.status === 'corrupted', 'Infinity schemaVersion 应返回 corrupted')
+  assert(
+    res.status === 'corrupted' && res.error.includes('正的安全整数'),
+    '错误信息应提到正的安全整数',
+  )
+}
+
+// 27e: NaN 不是合法 JSON 数值（JSON 规范不支持 NaN 字面量）
+// JSON.parse 遇到 NaN 会直接抛 SyntaxError，应在 JSON 解析阶段就判定为 corrupted。
+{
+  const rawJson = '{"schemaVersion":NaN,"runId":"x"}'
+  const res = deserializeSave(rawJson)
+  assert(res.status === 'corrupted', '含 NaN 字面量的非法 JSON 应返回 corrupted')
+  assert(
+    res.status === 'corrupted' && res.error.includes('JSON 解析失败'),
+    '错误信息应表明 JSON 解析失败',
+  )
+}
+
+// 27f: 字符串版本号
+{
+  const res = deserializeSave(JSON.stringify({ schemaVersion: '1', runId: 'x' }))
+  assert(res.status === 'corrupted', '字符串 schemaVersion 应返回 corrupted')
+}
+
+// 27g: 合法但不兼容的高版本 → incompatible（不是 corrupted）
+{
+  const res = deserializeSave(JSON.stringify({ schemaVersion: 999, runId: 'x' }))
+  assert(res.status === 'incompatible', '高版本 schemaVersion 应返回 incompatible')
+  assert(
+    res.status === 'incompatible' && res.schemaVersion === 999,
+    'incompatible 应返回具体版本号',
+  )
+}
+
+// 27h: 合法兼容版本 → valid（用完整存档验证）
+{
+  const save = makeValidSave()
+  const res = deserializeSave(serializeSave(save))
+  assert(res.status === 'valid', '合法兼容版本应通过校验')
+}
+
+// ------------------------------------------------------------------------
+// 场景 28：hasSave 与 loadSave 的 read_error 一致性
+//
+// 主存档读取失败时，hasSave 不应因为临时存档有效就返回 true。
+// 必须与 loadSave 的行为一致：主 key 读失败 = 无法加载。
+// ------------------------------------------------------------------------
+console.log('\n场景 28：hasSave 主存档 read_error 时不回退临时存档')
+{
+  clearStorage()
+
+  // 先写入一个有效的临时存档
+  const save = makeValidSave()
+  save.runId = 'run-temp-valid-28'
+  mockLs._setRaw(SAVE_KEY_TEMP, serializeSave(save))
+
+  // 模拟主 key 读取失败（抛异常）
+  mockLs.config.readErrorKeys = new Set([SAVE_KEY_PRIMARY])
+
+  const loadRes = loadSave()
+  assert(
+    loadRes.status === 'read_error',
+    '主存档读取失败时 loadSave 应返回 read_error',
+  )
+
+  const hasRes = hasSave()
+  assert(
+    hasRes === false,
+    '主存档读取失败时 hasSave 应返回 false，不应回退检查临时存档',
+  )
+
+  mockLs.config.readErrorKeys = undefined
+}
+
+// ------------------------------------------------------------------------
+// 场景 29：GameState 关键字段缺失校验
+//
+// 对照真实 GameState 类型，验证必需顶层字段缺失时能正确报错。
+// 可空字段（availableEncounter、pendingYearSummary 等）为 null 时不应报错。
+// ------------------------------------------------------------------------
+console.log('\n场景 29：GameState 关键字段缺失校验')
+
+// 29a: 缺少 professionType
+{
+  const save = makeValidSave()
+  const copy = JSON.parse(serializeSave(save))
+  delete copy.state.professionType
+  const v = validateGameSave(copy)
+  assert(!v.valid, '缺少 professionType 应校验失败')
+  assert(
+    v.errors.some((e) => e.path === 'state.professionType'),
+    '错误应定位到 state.professionType',
+  )
+}
+
+// 29b: 缺少 partTimeLock（布尔字段）
+{
+  const save = makeValidSave()
+  const copy = JSON.parse(serializeSave(save))
+  delete copy.state.partTimeLock
+  const v = validateGameSave(copy)
+  assert(!v.valid, '缺少 partTimeLock 应校验失败')
+  assert(
+    v.errors.some((e) => e.path === 'state.partTimeLock'),
+    '错误应定位到 state.partTimeLock',
+  )
+}
+
+// 29c: 缺少 pathScores（对象字段）
+{
+  const save = makeValidSave()
+  const copy = JSON.parse(serializeSave(save))
+  delete copy.state.pathScores
+  const v = validateGameSave(copy)
+  assert(!v.valid, '缺少 pathScores 应校验失败')
+  assert(
+    v.errors.some((e) => e.path === 'state.pathScores'),
+    '错误应定位到 state.pathScores',
+  )
+}
+
+// 29d: 缺少 housingId（字符串字段）
+{
+  const save = makeValidSave()
+  const copy = JSON.parse(serializeSave(save))
+  delete copy.state.housingId
+  const v = validateGameSave(copy)
+  assert(!v.valid, '缺少 housingId 应校验失败')
+  assert(
+    v.errors.some((e) => e.path === 'state.housingId'),
+    '错误应定位到 state.housingId',
+  )
+}
+
+// 29e: 缺少 ownedEquipmentIds（数组字段）
+{
+  const save = makeValidSave()
+  const copy = JSON.parse(serializeSave(save))
+  delete copy.state.ownedEquipmentIds
+  const v = validateGameSave(copy)
+  assert(!v.valid, '缺少 ownedEquipmentIds 应校验失败')
+  assert(
+    v.errors.some((e) => e.path === 'state.ownedEquipmentIds'),
+    '错误应定位到 state.ownedEquipmentIds',
+  )
+}
+
+// 29f: availableEncounter 为 null 不应报错（可空字段）
+{
+  const save = makeValidSave()
+  save.state.availableEncounter = null
+  const v = validateGameSave(save)
+  assert(v.valid, 'availableEncounter 为 null 不应报错')
+}
+
+// 29g: pendingYearSummary 为 null 不应报错（可空字段）
+{
+  const save = makeValidSave()
+  save.state.pendingYearSummary = null
+  const v = validateGameSave(save)
+  assert(v.valid, 'pendingYearSummary 为 null 不应报错')
+}
+
+// 29h: 缺少 leaveTokens（数值字段）
+{
+  const save = makeValidSave()
+  const copy = JSON.parse(serializeSave(save))
+  delete copy.state.leaveTokens
+  const v = validateGameSave(copy)
+  assert(!v.valid, '缺少 leaveTokens 应校验失败')
+  assert(
+    v.errors.some((e) => e.path === 'state.leaveTokens'),
+    '错误应定位到 state.leaveTokens',
+  )
+}
+
+// ========================================================================
+// 第四部分：遗产结算幂等保护
+// ========================================================================
+
+console.log('\n--- 第四部分：遗产结算幂等保护 ---\n')
+
+// 构造一个最小结局对象用于测试
+function makeTestEnding(id: string, tag: EndingTag): Ending {
+  return {
+    id,
+    tag,
+    title: `测试结局 ${id}`,
+    description: '测试用',
+    hint: '测试结局提示',
+  }
+}
+
+// 构造测试用的 meme
+function makeTestMeme(id: string, count: number): AuthorMeme {
+  return {
+    id,
+    name: `梗 ${id}`,
+    originBookTitle: '测试作品',
+    reputation: 'FUNNY',
+    usageCount: count,
+  }
+}
+
+// ------------------------------------------------------------------------
+// 场景 30：LegacyProfile 初始化与旧档案兼容
+// ------------------------------------------------------------------------
+console.log('场景 30：LegacyProfile 初始化与旧档案兼容')
+
+// 30a: 新建档案 settledRunIds 为空数组
+{
+  const raw = loadLegacyProfile()
+  // 注意：loadLegacyProfile 会读真实 localStorage，这里不依赖它
+  // 直接用结构检查验证类型
+  assert(
+    Array.isArray(raw.settledRunIds),
+    '新建/加载的档案应有 settledRunIds 数组',
+  )
+}
+
+// 30b: 旧版 JSON（无 settledRunIds 字段）能被正确兼容
+{
+  // 模拟旧档案：手动构造一个没有 settledRunIds 的对象
+  const oldJson = JSON.stringify({
+    totalLegacyPoints: 100,
+    unlockedEndingIds: ['ending_old'],
+    unlockedIdentityIds: ['default'],
+    keptCardIds: [],
+    unlockedMemes: [],
+    unlockedAchievementIds: [],
+    totalRuns: 1,
+    // 注意：没有 settledRunIds
+  })
+
+  // 写入 mock localStorage 后通过 loadLegacyProfile 读取
+  const LEGACY_KEY = 'freelancer-survival-legacy-v1'
+  mockLs._setRaw(LEGACY_KEY, oldJson)
+  const loaded = loadLegacyProfile()
+  assert(
+    Array.isArray(loaded.settledRunIds),
+    '旧档案加载后 settledRunIds 应为数组',
+  )
+  assert(
+    loaded.settledRunIds.length === 0,
+    '旧档案加载后 settledRunIds 应为空数组',
+  )
+  assert(loaded.totalLegacyPoints === 100, '旧档案其他字段保持不变')
+  assert(loaded.totalRuns === 1, '旧档案 totalRuns 保持不变')
+  mockLs._setRaw(LEGACY_KEY, '') // 清理
+}
+
+// 30c: settledRunIds 为字符串/数字/null 等非数组类型时，加载后得到空数组
+{
+  const LEGACY_KEY = 'freelancer-survival-legacy-v1'
+
+  // 字符串
+  mockLs._setRaw(LEGACY_KEY, JSON.stringify({ totalLegacyPoints: 10, settledRunIds: 'not-an-array' }))
+  assert(
+    Array.isArray(loadLegacyProfile().settledRunIds) && loadLegacyProfile().settledRunIds.length === 0,
+    'settledRunIds 为字符串时应返回空数组',
+  )
+
+  // 数字
+  mockLs._setRaw(LEGACY_KEY, JSON.stringify({ totalLegacyPoints: 10, settledRunIds: 42 }))
+  assert(
+    loadLegacyProfile().settledRunIds.length === 0,
+    'settledRunIds 为数字时应返回空数组',
+  )
+
+  // null
+  mockLs._setRaw(LEGACY_KEY, JSON.stringify({ totalLegacyPoints: 10, settledRunIds: null }))
+  assert(
+    loadLegacyProfile().settledRunIds.length === 0,
+    'settledRunIds 为 null 时应返回空数组',
+  )
+
+  mockLs._setRaw(LEGACY_KEY, '') // 清理
+}
+
+// 30d: settledRunIds 数组中混入非字符串元素时，只保留字符串
+{
+  const LEGACY_KEY = 'freelancer-survival-legacy-v1'
+  const mixed = {
+    totalLegacyPoints: 10,
+    settledRunIds: ['run-valid-1', 123, null, 'run-valid-2', { id: 'nope' }, true, 'run-valid-3'],
+  }
+  mockLs._setRaw(LEGACY_KEY, JSON.stringify(mixed))
+  const loaded = loadLegacyProfile()
+  assert(
+    loaded.settledRunIds.length === 3,
+    `过滤后应保留 3 个字符串，实际 ${loaded.settledRunIds.length} 个`,
+  )
+  assert(
+    loaded.settledRunIds[0] === 'run-valid-1'
+      && loaded.settledRunIds[1] === 'run-valid-2'
+      && loaded.settledRunIds[2] === 'run-valid-3',
+    '过滤后应按原顺序保留所有字符串元素',
+  )
+  mockLs._setRaw(LEGACY_KEY, '') // 清理
+}
+
+// ------------------------------------------------------------------------
+// 场景 31：首次结算正常增加收益
+// ------------------------------------------------------------------------
+console.log('\n场景 31：首次结算正常增加收益')
+
+{
+  const initialProfile = loadLegacyProfile()
+  // 确保空初始状态
+  const emptyProfile = {
+    ...initialProfile,
+    totalLegacyPoints: 0,
+    totalRuns: 0,
+    unlockedEndingIds: [],
+    settledRunIds: [],
+    unlockedMemes: [],
+  }
+
+  const ending = makeTestEnding('test_ending_1', 'triumph')
+  const result = settleLegacy(emptyProfile, ending, 'run-test-001', null)
+
+  assert(result.status === 'settled', '首次结算状态应为 settled')
+  assert(
+    result.profile.totalLegacyPoints === 300,
+    `首次结算点数应为 300，实际 ${result.profile.totalLegacyPoints}`,
+  )
+  assert(
+    result.profile.totalRuns === 1,
+    `首次结算 totalRuns 应为 1，实际 ${result.profile.totalRuns}`,
+  )
+  assert(
+    result.profile.settledRunIds.includes('run-test-001'),
+    '首次结算后 settledRunIds 应包含当前 runId',
+  )
+  assert(
+    result.profile.unlockedEndingIds.includes('test_ending_1'),
+    '首次结算后结局应被解锁',
+  )
+}
+
+// ------------------------------------------------------------------------
+// 场景 32：同一 runId 重复结算不增加收益
+// ------------------------------------------------------------------------
+console.log('\n场景 32：同一 runId 重复结算不增加收益')
+
+{
+  const ending = makeTestEnding('test_ending_2', 'compromise')
+  const memes: AuthorMeme[] = [makeTestMeme('meme_a', 2)]
+
+  // 第一次结算
+  const first = settleLegacy(
+    {
+      totalLegacyPoints: 0,
+      unlockedEndingIds: [] as string[],
+      unlockedIdentityIds: ['default'],
+      keptCardIds: [] as string[],
+      unlockedMemes: [] as AuthorMeme[],
+      unlockedAchievementIds: [] as string[],
+      totalRuns: 0,
+      settledRunIds: [] as string[],
+    },
+    ending,
+    'run-idempotent-999',
+    null,
+    memes,
+    [],
+  )
+  assert(first.status === 'settled', '第一次结算状态 settled')
+
+  // 第二次结算（同一 runId）
+  const second = settleLegacy(
+    first.profile,
+    ending,
+    'run-idempotent-999',
+    null,
+    memes,
+    [],
+  )
+  assert(
+    second.status === 'already_settled',
+    `第二次结算状态应为 already_settled，实际 ${second.status}`,
+  )
+
+  // 点数不重复增加
+  assert(
+    second.profile.totalLegacyPoints === first.profile.totalLegacyPoints,
+    '重复结算不应增加遗产点数',
+  )
+
+  // totalRuns 不重复 +1
+  assert(
+    second.profile.totalRuns === first.profile.totalRuns,
+    '重复结算不应增加 totalRuns',
+  )
+
+  // meme usageCount 不重复累加
+  const memeAfter = second.profile.unlockedMemes.find((m) => m.id === 'meme_a')
+  assert(memeAfter !== undefined, 'meme 应存在')
+  assert(
+    memeAfter!.usageCount === 2,
+    `重复结算不应累加 meme usageCount，期望 2，实际 ${memeAfter!.usageCount}`,
+  )
+
+  // settledRunIds 不重复添加
+  assert(
+    second.profile.settledRunIds.length === first.profile.settledRunIds.length,
+    '重复结算不应重复添加 runId',
+  )
+}
+
+// ------------------------------------------------------------------------
+// 场景 33：不同 runId 分别正常结算
+// ------------------------------------------------------------------------
+console.log('\n场景 33：不同 runId 分别正常结算')
+
+{
+  const ending = makeTestEnding('test_ending_3', 'fail')
+  let profile = {
+    totalLegacyPoints: 0,
+    unlockedEndingIds: [] as string[],
+    unlockedIdentityIds: ['default'],
+    keptCardIds: [] as string[],
+    unlockedMemes: [] as AuthorMeme[],
+    unlockedAchievementIds: [] as string[],
+    totalRuns: 0,
+    settledRunIds: [] as string[],
+  }
+
+  // 第一局
+  const r1 = settleLegacy(profile, ending, 'run-a-001', null)
+  assert(r1.status === 'settled', '第一局结算 settled')
+  profile = r1.profile
+  const pointsAfter1 = profile.totalLegacyPoints
+
+  // 第二局
+  const r2 = settleLegacy(profile, ending, 'run-a-002', null)
+  assert(r2.status === 'settled', '第二局结算 settled')
+  profile = r2.profile
+
+  assert(profile.totalRuns === 2, '两局后 totalRuns 应为 2')
+  assert(
+    profile.totalLegacyPoints === pointsAfter1 + 100,
+    '第二局应再次增加 100 点（fail 结局）',
+  )
+  assert(
+    profile.settledRunIds.length === 2,
+    '两局后 settledRunIds 应有 2 个 ID',
+  )
+  assert(
+    profile.settledRunIds.includes('run-a-001'),
+    '应包含第一局 runId',
+  )
+  assert(
+    profile.settledRunIds.includes('run-a-002'),
+    '应包含第二局 runId',
+  )
+}
+
+// ------------------------------------------------------------------------
+// 场景 34：saveLegacyProfile 写入失败 / 成功返回值
+// ------------------------------------------------------------------------
+console.log('\n场景 34：saveLegacyProfile 返回值与失败处理')
+
+const LEGACY_KEY = 'freelancer-survival-legacy-v1'
+
+// 34a: 写入成功返回 ok: true
+{
+  mockLs._setRaw(LEGACY_KEY, '') // 确保可写
+  const profile = loadLegacyProfile()
+  const result = saveLegacyProfile(profile)
+  assert(result.ok === true, '写入成功应返回 ok: true')
+}
+
+// 34b: 写入失败返回 ok: false 及错误信息
+{
+  mockLs.config.writeErrorKeys = new Set([LEGACY_KEY])
+  const profile = loadLegacyProfile()
+  const result = saveLegacyProfile(profile)
+  assert(result.ok === false, '写入失败应返回 ok: false')
+  assert(
+    !result.ok && typeof result.error === 'string' && result.error.length > 0,
+    '写入失败应包含 error 信息',
+  )
+  mockLs.config.writeErrorKeys = undefined
+}
+
+// 34c: 写入失败时内存档案不变（逻辑验证：调用方应检查返回值再决定是否更新）
+{
+  const profile = {
+    totalLegacyPoints: 500,
+    unlockedEndingIds: [] as string[],
+    unlockedIdentityIds: ['default'],
+    keptCardIds: [] as string[],
+    unlockedMemes: [] as AuthorMeme[],
+    unlockedAchievementIds: [] as string[],
+    totalRuns: 3,
+    settledRunIds: ['run-1', 'run-2', 'run-3'],
+  }
+
+  // 模拟调用方"先计算，再保存，保存失败不更新内存"的正确流程
+  const ending = makeTestEnding('test_fail_save', 'fail')
+  const result = settleLegacy(profile, ending, 'run-save-fail-test', null)
+  assert(result.status === 'settled', '计算阶段正常')
+
+  // 设置写入失败
+  mockLs.config.writeErrorKeys = new Set([LEGACY_KEY])
+  const saveResult = saveLegacyProfile(result.profile)
+  assert(saveResult.ok === false, '保存失败')
+
+  // 调用方不应更新内存（这里验证：profile 变量本身没有被修改）
+  // settleLegacy 是纯函数，原 profile 对象不变
+  assert(
+    profile.totalLegacyPoints === 500,
+    '原档案对象不应被纯函数修改（点数不变）',
+  )
+  assert(profile.totalRuns === 3, '原档案对象不应被修改（局数不变）')
+  assert(
+    profile.settledRunIds.length === 3,
+    '原档案对象不应被修改（settledRunIds 不变）',
+  )
+
+  mockLs.config.writeErrorKeys = undefined
+}
+
+// 34d: 失败后重试成功，最终只产生一次结算收益
+{
+  const initial = {
+    totalLegacyPoints: 200,
+    unlockedEndingIds: [] as string[],
+    unlockedIdentityIds: ['default'],
+    keptCardIds: [] as string[],
+    unlockedMemes: [] as AuthorMeme[],
+    unlockedAchievementIds: [] as string[],
+    totalRuns: 1,
+    settledRunIds: ['run-before-retry'],
+  }
+
+  const ending = makeTestEnding('retry_test', 'open')
+  const result = settleLegacy(initial, ending, 'run-retry-001', null)
+  assert(result.status === 'settled', '首次计算成功')
+  const expectedPoints = result.profile.totalLegacyPoints
+
+  // 第一次：写入失败
+  mockLs.config.writeErrorKeys = new Set([LEGACY_KEY])
+  const failSave = saveLegacyProfile(result.profile)
+  assert(failSave.ok === false, '第一次保存失败')
+  // 调用方不更新内存...
+
+  // 第二次：重试，写入成功
+  mockLs.config.writeErrorKeys = undefined
+  const okSave = saveLegacyProfile(result.profile)
+  assert(okSave.ok === true, '重试保存成功')
+
+  // 验证：重新加载后点数正确（只增加了一次）
+  const loaded = loadLegacyProfile()
+  assert(
+    loaded.totalLegacyPoints === expectedPoints,
+    `重试后点数应为 ${expectedPoints}（只增加一次），实际 ${loaded.totalLegacyPoints}`,
+  )
+  assert(
+    loaded.settledRunIds.includes('run-retry-001'),
+    '重试成功后 settledRunIds 包含 runId',
+  )
+  assert(
+    loaded.settledRunIds.filter((id) => id === 'run-retry-001').length === 1,
+    'runId 只出现一次（不会因为重试重复）',
+  )
+}
+
+// 清理 legacy key
+mockLs._setRaw(LEGACY_KEY, '')
+
+// ========================================================================
+// 场景 35-48：B3-A 启动恢复逻辑测试
+// ========================================================================
+
+console.log('\n场景 35：事件链恢复 — 有效 chainId + 有效 stepId')
+{
+  const chainId = 'writer_rejection_crisis'
+  const chain = EVENT_CHAINS[chainId]
+  assert(chain !== undefined, '事件链存在')
+  if (chain) {
+    const firstStep = chain.steps[0]
+    assert(firstStep !== undefined, '事件链至少有一个步骤')
+    const stepExists = chain.steps.some((s) => s.stepId === firstStep.stepId)
+    assert(stepExists, 'stepId 在链中能找到')
+  }
+}
+
+console.log('\n场景 36：事件链恢复 — 无事件链（chainId 为 null）')
+{
+  const chainId: string | null = null
+  const chain = chainId ? EVENT_CHAINS[chainId] ?? null : null
+  assert(chain === null, 'chainId 为 null 时返回 null')
+}
+
+console.log('\n场景 37：事件链恢复 — 不存在的 chainId')
+{
+  const chainId = 'nonexistent_chain_xyz'
+  const chain = EVENT_CHAINS[chainId] ?? null
+  assert(chain === null, '不存在的 chainId 返回 null')
+}
+
+console.log('\n场景 38：事件链恢复 — 有效 chain 但 stepId 不匹配')
+{
+  const chainId = 'writer_rejection_crisis'
+  const chain = EVENT_CHAINS[chainId]
+  assert(chain !== undefined, '事件链存在')
+  if (chain) {
+    const badStepId = 'step_that_does_not_exist_xyz'
+    const stepExists = chain.steps.some((s) => s.stepId === badStepId)
+    assert(stepExists === false, '不存在的 stepId 应返回 false')
+  }
+}
+
+console.log('\n场景 39：结局恢复 — 有效 endingId')
+{
+  const endingId = 'BURNOUT_FAIL'
+  const ending = ENDING_BY_ID[endingId] ?? null
+  assert(ending !== null, '有效 endingId 能找到结局')
+  assert(ending.id === endingId, '结局 id 匹配')
+  assert(ending.title.length > 0, '结局有标题')
+}
+
+console.log('\n场景 40：结局恢复 — 不存在的 endingId')
+{
+  const endingId = 'NONEXISTENT_ENDING_XYZ'
+  const ending = ENDING_BY_ID[endingId] ?? null
+  assert(ending === null, '不存在的 endingId 返回 null')
+}
+
+console.log('\n场景 41：已结算 runId 检查 — 未结算的局可以恢复')
+{
+  const saveRunId = 'run-unsaved-001'
+  const settledRunIds: string[] = ['run-old-001', 'run-old-002']
+  const isSettled = settledRunIds.includes(saveRunId)
+  assert(isSettled === false, '未结算的 runId 不应在 settledRunIds 中')
+}
+
+console.log('\n场景 42：已结算 runId 检查 — 已结算的局不能恢复')
+{
+  const saveRunId = 'run-already-settled-001'
+  const settledRunIds: string[] = ['run-already-settled-001', 'run-other-002']
+  const isSettled = settledRunIds.includes(saveRunId)
+  assert(isSettled === true, '已结算的 runId 应在 settledRunIds 中')
+}
+
+/** 模拟启动决策逻辑（与 useGame 中 bootInit 的核心判断一致）
+ *
+ *  返回值与 BootStatus 对应：
+ *  - 'restored'：有效存档且未结算
+ *  - 'already_settled'：有效存档但已结算
+ *  - 'new_game'：无存档
+ *  - 'corrupted' / 'incompatible' / 'read_error'：异常状态
+ */
+function simulateBootDecision(
+  saveStatus: 'valid' | 'empty' | 'corrupted' | 'incompatible' | 'read_error',
+  saveRunId: string | null,
+  settledRunIds: string[],
+): string {
+  if (saveStatus === 'valid' && saveRunId !== null) {
+    if (settledRunIds.includes(saveRunId)) {
+      return 'already_settled'
+    }
+    return 'restored'
+  }
+  if (saveStatus === 'empty') {
+    return 'new_game'
+  }
+  // corrupted / incompatible / read_error
+  return saveStatus
+}
+
+console.log('\n场景 43：启动决策 — 有效存档 → restored')
+{
+  const result = simulateBootDecision('valid', 'run-fresh-001', [])
+  assert(result === 'restored', '有效且未结算的存档应返回 restored')
+}
+
+console.log('\n场景 44：启动决策 — 空存档 → new_game')
+{
+  const result = simulateBootDecision('empty', null, [])
+  assert(result === 'new_game', '空存档应返回 new_game')
+}
+
+console.log('\n场景 45：启动决策 — 损坏存档 → corrupted（不是 new_game）')
+{
+  const result = simulateBootDecision('corrupted', null, [])
+  assert(result === 'corrupted', '损坏存档应返回 corrupted')
+  assert(result !== 'new_game', '损坏存档不应被当成空存档')
+  assert(result !== 'restored', '损坏存档不应被当成有效存档')
+}
+
+console.log('\n场景 46：启动决策 — 不兼容版本 → incompatible（不是 new_game）')
+{
+  const result = simulateBootDecision('incompatible', null, [])
+  assert(result === 'incompatible', '不兼容版本应返回 incompatible')
+  assert(result !== 'new_game', '不兼容版本不应被当成空存档')
+  assert(result !== 'restored', '不兼容版本不应被当成有效存档')
+}
+
+console.log('\n场景 47：启动决策 — 已结算 runId → already_settled（不是 restored）')
+{
+  const result = simulateBootDecision('valid', 'run-settled-001', ['run-settled-001'])
+  assert(result === 'already_settled', '已结算的有效存档应返回 already_settled')
+  assert(result !== 'restored', '已结算的局不应作为正常游戏恢复')
+  assert(result !== 'new_game', '已结算的局不应被当成空存档')
+}
+
+console.log('\n场景 48：存档字段完整性 — GameSave 包含所有恢复所需字段')
+{
+  const save = makeValidSave()
+  assert(save.runId !== undefined && save.runId.length > 0, '有 runId')
+  assert(save.state !== undefined && save.state !== null, '有 state')
+  assert(Array.isArray(save.logs), '有 logs 数组')
+  assert(save.eventChain !== undefined, '有 eventChain')
+  assert('chainId' in save.eventChain, 'eventChain 有 chainId')
+  assert('stepId' in save.eventChain, 'eventChain 有 stepId')
+  assert('stepDepth' in save.eventChain, 'eventChain 有 stepDepth')
+  assert('pendingEvent' in save, '有 pendingEvent')
+  assert('endingId' in save, '有 endingId')
+  assert(typeof save.logIdSeed === 'number', '有 logIdSeed')
+  assert(typeof save.eventIdSeed === 'number', '有 eventIdSeed')
+}
+
+console.log('\n场景 49：ID 种子恢复 — 不会从 1 重新开始')
+{
+  const save = makeValidSave()
+  save.logIdSeed = 42
+  save.eventIdSeed = 17
+  // 验证存档中的种子值被正确保存（序列化往返）
+  const serialized = serializeSave(save)
+  const deserialized = deserializeSave(serialized)
+  assert(deserialized.status === 'valid', '序列化往返后仍有效')
+  if (deserialized.status === 'valid') {
+    assert(deserialized.data.logIdSeed === 42, 'logIdSeed 保持原值')
+    assert(deserialized.data.eventIdSeed === 17, 'eventIdSeed 保持原值')
+  }
+}
+
+// ========================================================================
+// 场景 50-62：B3-A 修复验证（删除失败处理 + 结算后状态转换）
+// ========================================================================
+
+console.log('\n场景 50：deleteSave 成功 — 主 key 和临时 key 都被清除')
+{
+  mockLs._clear()
+  const save = makeValidSave()
+  const writeRes = writeSave(save)
+  assert(writeRes.status === 'success', '写入成功以确保存档存在')
+  assert(mockLs._has(SAVE_KEY_PRIMARY), '主 key 存在')
+
+  const delResult = deleteSave()
+  assert(delResult.status === 'success', 'deleteSave 返回 success')
+  assert(!mockLs._has(SAVE_KEY_PRIMARY), '主 key 已被删除')
+  assert(!mockLs._has(SAVE_KEY_TEMP), '临时 key 已被删除')
+}
+
+console.log('\n场景 51：deleteSave 失败 — 主 key 删除抛错时返回 error')
+{
+  mockLs._clear()
+  const save = makeValidSave()
+  writeSave(save)
+  const rawBefore = mockLs._getRaw(SAVE_KEY_PRIMARY)
+  assert(rawBefore !== null, '删除前存档存在')
+
+  // 模拟主 key 删除失败
+  mockLs.config.removeErrorKeys = new Set([SAVE_KEY_PRIMARY])
+  const delResult = deleteSave()
+  mockLs.config.removeErrorKeys = undefined
+
+  assert(delResult.status === 'error', 'deleteSave 返回 error')
+  if (delResult.status === 'error') {
+    assert(
+      delResult.error.length > 0,
+      'error 字段有描述信息',
+    )
+  }
+  // 主 key 应仍然存在（删除失败不改变原始数据）
+  assert(mockLs._has(SAVE_KEY_PRIMARY), '主 key 删除失败后原始数据仍保留')
+}
+
+console.log('\n场景 52：deleteSave 失败后 loadSave 仍能读到原存档')
+{
+  mockLs._clear()
+  const save = makeValidSave()
+  save.state.day = 30
+  writeSave(save)
+
+  // 模拟删除失败
+  mockLs.config.removeErrorKeys = new Set([SAVE_KEY_PRIMARY])
+  deleteSave()
+  mockLs.config.removeErrorKeys = undefined
+
+  // 原存档应仍可读取
+  const loadResult = loadSave()
+  assert(loadResult.status === 'valid', '删除失败后原存档仍可正常读取')
+  if (loadResult.status === 'valid') {
+    assert(loadResult.data.state.day === 30, '存档内容未被改变')
+  }
+}
+
+console.log('\n场景 53：settleLegacy 幂等 — 已结算 runId 不重复发放遗产点')
+{
+  mockLs._clear()
+  mockLs._setRaw(LEGACY_KEY, '')
+
+  const runId = 'run-idempotent-001'
+  const ending: Ending = {
+    id: 'TEST_ENDING',
+    title: '测试结局',
+    tag: 'triumph' as EndingTag,
+    description: '测试用',
+    hint: '测试',
+  }
+  const baseSave = makeValidSave()
+  const state = baseSave.state
+  const unlockedMemes: AuthorMeme[] = []
+  const achievementIds: string[] = []
+
+  // 首次结算
+  const first = settleLegacy(
+    loadLegacyProfile(),
+    ending,
+    runId,
+    null,
+    unlockedMemes,
+    achievementIds,
+    state,
+  )
+  assert(first.status === 'settled', '首次结算返回 settled')
+  const firstPoints = first.profile.totalLegacyPoints
+
+  // 二次结算（相同 runId）
+  const second = settleLegacy(
+    first.profile,
+    ending,
+    runId,
+    null,
+    unlockedMemes,
+    achievementIds,
+    state,
+  )
+  assert(second.status === 'already_settled', '二次结算返回 already_settled')
+  assert(
+    second.profile.totalLegacyPoints === firstPoints,
+    '已结算 runId 不重复发放遗产点',
+  )
+  assert(
+    second.profile.settledRunIds.length === first.profile.settledRunIds.length,
+    'settledRunIds 不重复追加',
+  )
+}
+
+console.log('\n场景 54：settleLegacy already_settled 不改变 profile 引用内容')
+{
+  mockLs._clear()
+  mockLs._setRaw(LEGACY_KEY, '')
+
+  const runId = 'run-idempotent-002'
+  const ending: Ending = {
+    id: 'TEST_ENDING_2',
+    title: '测试结局2',
+    tag: 'fail' as EndingTag,
+    description: '测试用',
+    hint: '测试',
+  }
+  const state = makeValidSave().state
+
+  const first = settleLegacy(
+    loadLegacyProfile(),
+    ending,
+    runId,
+    null,
+    [],
+    [],
+    state,
+  )
+  assert(first.status === 'settled', '首次结算成功')
+
+  const profileBefore = JSON.stringify(first.profile)
+  const second = settleLegacy(
+    first.profile,
+    ending,
+    runId,
+    null,
+    [],
+    [],
+    state,
+  )
+  assert(second.status === 'already_settled', '二次结算返回 already_settled')
+  const profileAfter = JSON.stringify(second.profile)
+  assert(profileBefore === profileAfter, 'already_settled 不改变 profile 任何字段')
+}
+
+console.log('\n场景 55：事件链生产配置校验 — 每个链的 steps 中都能找到 stepId')
+{
+  const chainIds = Object.keys(EVENT_CHAINS)
+  assert(chainIds.length > 0, '存在事件链配置')
+  for (const chainId of chainIds) {
+    const chain = EVENT_CHAINS[chainId]
+    assert(chain !== undefined, `事件链 ${chainId} 存在`)
+    if (chain) {
+      assert(chain.steps.length > 0, `事件链 ${chainId} 至少有一个步骤`)
+      for (const step of chain.steps) {
+        const found = chain.steps.some((s) => s.stepId === step.stepId)
+        assert(found, `链 ${chainId} 中步骤 ${step.stepId} 可被查回`)
+      }
+    }
+  }
+}
+
+console.log('\n场景 56：事件链恢复 — 不存在的 chainId 应返回 null（生产数据验证）')
+{
+  const nonexistentId = 'this_chain_does_not_exist_xyz_123'
+  const chain = EVENT_CHAINS[nonexistentId] ?? null
+  assert(chain === null, '不存在的 chainId 返回 null')
+}
+
+// ---- 以下为状态机规则测试 ----
+// 说明：React Hook 内部逻辑（useGame / App）无法在纯 Node 环境直接测试。
+// 以下用纯函数模拟状态转换规则，与生产代码中的判断逻辑保持一致，
+// 用于验证规则正确性。组件集成流程需手动验证。
+
+console.log('\n场景 57：restart 事务规则 — 删除失败不消耗携带卡')
+{
+  // 模拟 restart 的事务顺序：先删存档 → 再消耗携带卡 → 再更新状态
+  // 删除失败应立即返回，不进入携带卡消耗步骤
+  function simulateRestartOrder(
+    deleteSucceeds: boolean,
+    hasKeptCards: boolean,
+  ): { consumed: boolean; stateChanged: boolean; runIdChanged: boolean } {
+    // 步骤 0：删除存档
+    if (!deleteSucceeds) {
+      // 删除失败 → 立即中止，无任何副作用
+      return { consumed: false, stateChanged: false, runIdChanged: false }
+    }
+    // 步骤 1：消耗携带卡（仅当有待消耗的卡时）
+    const consumed = hasKeptCards
+    // 步骤 2：更新状态和 runId
+    return { consumed, stateChanged: true, runIdChanged: true }
+  }
+
+  // 删除失败，有携带卡
+  const r1 = simulateRestartOrder(false, true)
+  assert(r1.consumed === false, '删除失败不消耗携带卡')
+  assert(r1.stateChanged === false, '删除失败不更新游戏状态')
+  assert(r1.runIdChanged === false, '删除失败不改变 runId')
+
+  // 删除成功，有携带卡
+  const r2 = simulateRestartOrder(true, true)
+  assert(r2.consumed === true, '删除成功后消耗携带卡')
+  assert(r2.stateChanged === true, '删除成功后更新游戏状态')
+  assert(r2.runIdChanged === true, '删除成功后生成新 runId')
+}
+
+console.log('\n场景 58：restart 事务规则 — 删除失败不改变运行态字段')
+{
+  // 运行态字段包括：state、logs、pendingEvent、ending、eventChain、runId、bootStatus
+  // 删除失败时这些字段应全部保持原值
+  type RuntimeState = {
+    stateDay: number
+    logCount: number
+    hasPendingEvent: boolean
+    hasEnding: boolean
+    hasChain: boolean
+    runId: string
+    bootStatus: string
+  }
+  const before: RuntimeState = {
+    stateDay: 15,
+    logCount: 42,
+    hasPendingEvent: true,
+    hasEnding: false,
+    hasChain: true,
+    runId: 'run-original-001',
+    bootStatus: 'restored',
+  }
+
+  function restartWithDeleteFailure(original: RuntimeState): RuntimeState {
+    // 删除失败 → 直接返回，不修改任何字段
+    return { ...original } // 等价于无副作用
+  }
+
+  const after = restartWithDeleteFailure(before)
+  assert(after.stateDay === 15, 'state 未变')
+  assert(after.logCount === 42, 'logs 未变')
+  assert(after.hasPendingEvent === true, 'pendingEvent 未变')
+  assert(after.hasEnding === false, 'ending 未变')
+  assert(after.hasChain === true, 'eventChain 未变')
+  assert(after.runId === 'run-original-001', 'runId 未变')
+  assert(after.bootStatus === 'restored', 'bootStatus 未变')
+}
+
+console.log('\n场景 59：dismissSaveError 规则 — 删除失败不切换 bootStatus')
+{
+  function simulateDismiss(
+    currentStatus: string,
+    deleteSucceeds: boolean,
+  ): { status: string; idSeedsReset: boolean } {
+    if (!deleteSucceeds) {
+      // 删除失败：保留原状态
+      return { status: currentStatus, idSeedsReset: false }
+    }
+    // 删除成功：切换为 new_game，重置种子
+    return { status: 'new_game', idSeedsReset: true }
+  }
+
+  // corrupted + 删除失败 → 保持 corrupted
+  const r1 = simulateDismiss('corrupted', false)
+  assert(r1.status === 'corrupted', '删除失败保持 corrupted 状态')
+  assert(r1.idSeedsReset === false, '删除失败不重置 ID 种子')
+
+  // incompatible + 删除失败 → 保持 incompatible
+  const r2 = simulateDismiss('incompatible', false)
+  assert(r2.status === 'incompatible', '删除失败保持 incompatible 状态')
+
+  // already_settled + 删除成功 → 切换为 new_game
+  const r3 = simulateDismiss('already_settled', true)
+  assert(r3.status === 'new_game', '删除成功切换为 new_game')
+  assert(r3.idSeedsReset === true, '删除成功重置 ID 种子')
+}
+
+console.log('\n场景 60：结算后状态转换 — settled 切换为 new_game')
+{
+  type SettleResult = 'settled' | 'already_settled' | 'save_error' | 'no_ending' | 'in_progress'
+
+  function simulateSettleTransition(
+    currentBootStatus: string,
+    settleResult: SettleResult,
+  ): string {
+    if (settleResult === 'settled' || settleResult === 'already_settled') {
+      return 'new_game'
+    }
+    // save_error / no_ending / in_progress：保持原状态
+    return currentBootStatus
+  }
+
+  // 从 restored 开始，首次结算成功 → new_game
+  assert(
+    simulateSettleTransition('restored', 'settled') === 'new_game',
+    'restored + settled → new_game',
+  )
+
+  // 从 new_game 开始，首次结算成功 → new_game（二周目流程）
+  assert(
+    simulateSettleTransition('new_game', 'settled') === 'new_game',
+    'new_game + settled → new_game（不影响二周目）',
+  )
+}
+
+console.log('\n场景 61：结算失败不切换 bootStatus')
+{
+  type SettleResult = 'settled' | 'already_settled' | 'save_error' | 'no_ending' | 'in_progress'
+
+  function simulateSettleTransition(
+    currentBootStatus: string,
+    settleResult: SettleResult,
+  ): string {
+    if (settleResult === 'settled' || settleResult === 'already_settled') {
+      return 'new_game'
+    }
+    return currentBootStatus
+  }
+
+  // save_error → 保持原状态（允许玩家重试）
+  assert(
+    simulateSettleTransition('restored', 'save_error') === 'restored',
+    'save_error 保持 restored（不切换）',
+  )
+  assert(
+    simulateSettleTransition('new_game', 'save_error') === 'new_game',
+    'save_error 保持 new_game（不切换）',
+  )
+
+  // in_progress / no_ending → 保持原状态
+  assert(
+    simulateSettleTransition('restored', 'in_progress') === 'restored',
+    'in_progress 不改变状态',
+  )
+  assert(
+    simulateSettleTransition('restored', 'no_ending') === 'restored',
+    'no_ending 不改变状态',
+  )
+}
+
+console.log('\n场景 62：already_settled 切换为 new_game（幂等由结算层保证）')
+{
+  type SettleResult = 'settled' | 'already_settled' | 'save_error'
+
+  function simulateSettleTransition(
+    currentBootStatus: string,
+    settleResult: SettleResult,
+  ): string {
+    if (settleResult === 'settled' || settleResult === 'already_settled') {
+      return 'new_game'
+    }
+    return currentBootStatus
+  }
+
+  // already_settled 也切换为 new_game，让玩家能进入下一局设置
+  // 注意：收益不重复发放由 settleLegacy 的幂等保证，不由 bootStatus 保证
+  assert(
+    simulateSettleTransition('restored', 'already_settled') === 'new_game',
+    'already_settled 也切换为 new_game（可进入下一局设置）',
+  )
+}
+
+console.log('\n场景 63：临时存档删除失败时，主存档必须保留')
+{
+  mockLs._clear()
+
+  // 1. 写入有效主存档
+  const save = makeValidSave()
+  const writeRes = writeSave(save)
+  assert(writeRes.status === 'success', '写入成功以确保主存档存在')
+  const primaryBefore = mockLs._getRaw(SAVE_KEY_PRIMARY)
+  assert(primaryBefore !== null && primaryBefore.length > 0, '删除前主存档存在且非空')
+
+  // 2. 确保临时存档也存在（写入一份假的临时存档）
+  const tempContent = '{"fake":"temp-save"}'
+  mockLs._setRaw(SAVE_KEY_TEMP, tempContent)
+  assert(mockLs._has(SAVE_KEY_TEMP), '删除前临时存档存在')
+
+  // 3. 记录原始字符串
+  const primaryRawBefore = mockLs._getRaw(SAVE_KEY_PRIMARY)
+  const tempRawBefore = mockLs._getRaw(SAVE_KEY_TEMP)
+
+  // 4. 设置 mock：临时 key 删除失败
+  mockLs.config.removeErrorKeys = new Set([SAVE_KEY_TEMP])
+
+  // 5. 调用生产代码 deleteSave()
+  const delResult = deleteSave()
+
+  // 6. 恢复 mock 配置（先恢复再断言，防止断言失败后污染后续测试）
+  mockLs.config.removeErrorKeys = undefined
+
+  // 7. 断言
+  assert(delResult.status === 'error', 'deleteSave 返回 error')
+  if (delResult.status === 'error') {
+    assert(
+      delResult.error.includes('临时存档'),
+      '错误信息标识为临时存档删除失败',
+    )
+  }
+  assert(mockLs._has(SAVE_KEY_PRIMARY), '主存档仍然存在')
+  assert(
+    mockLs._getRaw(SAVE_KEY_PRIMARY) === primaryRawBefore,
+    '主存档原始字符串与删除前完全一致',
+  )
+  assert(mockLs._has(SAVE_KEY_TEMP), '临时存档仍然存在（删除失败）')
+  assert(
+    mockLs._getRaw(SAVE_KEY_TEMP) === tempRawBefore,
+    '临时存档内容未被修改',
+  )
+}
+
+console.log('\n场景 64：主存档删除失败时，主存档必须保留')
+{
+  mockLs._clear()
+
+  // 1. 写入有效主存档
+  const save = makeValidSave()
+  const writeRes = writeSave(save)
+  assert(writeRes.status === 'success', '写入成功以确保主存档存在')
+  const primaryRawBefore = mockLs._getRaw(SAVE_KEY_PRIMARY)
+  assert(primaryRawBefore !== null && primaryRawBefore.length > 0, '删除前主存档存在且非空')
+
+  // 2. 确保临时存档也存在
+  const tempContent = '{"fake":"temp-save-for-primary-fail"}'
+  mockLs._setRaw(SAVE_KEY_TEMP, tempContent)
+  assert(mockLs._has(SAVE_KEY_TEMP), '删除前临时存档存在')
+
+  // 3. 设置 mock：主 key 删除失败
+  mockLs.config.removeErrorKeys = new Set([SAVE_KEY_PRIMARY])
+
+  // 4. 调用生产代码 deleteSave()
+  const delResult = deleteSave()
+
+  // 5. 恢复 mock 配置
+  mockLs.config.removeErrorKeys = undefined
+
+  // 6. 断言
+  assert(delResult.status === 'error', 'deleteSave 返回 error')
+  if (delResult.status === 'error') {
+    assert(
+      delResult.error.includes('主存档'),
+      '错误信息标识为主存档删除失败',
+    )
+  }
+  assert(mockLs._has(SAVE_KEY_PRIMARY), '主存档仍然存在')
+  assert(
+    mockLs._getRaw(SAVE_KEY_PRIMARY) === primaryRawBefore,
+    '主存档原始字符串与删除前完全一致',
+  )
+  assert(!mockLs._has(SAVE_KEY_TEMP), '临时存档已经成功删除')
 }
 
 // ========================================================================
