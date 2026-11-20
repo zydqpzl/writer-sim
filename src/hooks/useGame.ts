@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   ActionDef,
   ActionType,
@@ -83,7 +83,9 @@ import {
 import { PLATFORMS, getPlatformAuthorRank } from '../data/platforms'
 import { generateMarketTrend, tickMarketTrend } from '../data/marketTrends'
 import { simulatePlatformDaily } from '../engine/platformEngine'
-import { loadSave, deleteSave } from '../save/saveStorage'
+import { loadSave, deleteSave, writeSave } from '../save/saveStorage'
+import type { GameSave } from '../save/saveTypes'
+import { SAVE_SCHEMA_VERSION, GAME_VERSION } from '../save/saveTypes'
 import { ENDING_BY_ID } from '../data/endings'
 import {
   abandonWriterProject,
@@ -680,6 +682,124 @@ export function useGame(initialSetup?: StartSetup) {
     return 0
   })
 
+  // ====== 自动保存 ======
+  // 自动保存是否已启用（生命周期门控）：仅在游戏有效进行中为 true
+  // 初始为 false，由启动恢复 / 新局创建逻辑显式启用
+  const autoSaveEnabledRef = useRef(false)
+  // 是否有待处理的保存请求：动作函数设置为 true，useEffect 消费后重置为 false
+  const saveRequestedRef = useRef(false)
+  // 连续失败计数：连续 3 次失败后暂停自动保存
+  const saveFailCountRef = useRef(0)
+  // 最近一次保存错误信息
+  const lastSaveErrorRef = useRef<string | null>(null)
+  // 保存状态（暴露给 UI 展示）
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error' | 'paused'>('idle')
+
+  /** 组装完整存档快照（从当前所有 React state + 模块级种子变量构建）
+   *
+   *  使用 ref 保存最新构建函数，避免 useCallback 闭包捕获旧状态。
+   *  在 useEffect 和 retrySave 中均通过 ref 调用，确保总是读取最新状态。
+   */
+  const snapshotBuilderRef = useRef<() => GameSave>(() => ({}) as GameSave)
+  snapshotBuilderRef.current = (): GameSave => {
+    return {
+      schemaVersion: SAVE_SCHEMA_VERSION,
+      gameVersion: GAME_VERSION,
+      savedAt: Date.now(),
+      runId,
+      state,
+      logs,
+      eventChain: {
+        chainId: currentChain?.id ?? null,
+        stepId: currentStepId,
+        stepDepth,
+      },
+      pendingEvent,
+      endingId: ending?.id ?? null,
+      logIdSeed,
+      eventIdSeed,
+    }
+  }
+
+  // 提交后统一保存：在 React 状态提交后组装完整快照并写入
+  // - 一次渲染提交只进行一次保存，同一动作的多个状态更新自然合并
+  // - 所有状态均为最新提交值，不从旧闭包读取
+  // - 连续失败 3 次后进入暂停状态，不再自动重试，保留待保存标记供手动重试
+  useEffect(() => {
+    // 门 1：是否有保存请求
+    if (!saveRequestedRef.current) return
+    // 门 2：自动保存是否已启用（生命周期门控）
+    if (!autoSaveEnabledRef.current) {
+      saveRequestedRef.current = false
+      return
+    }
+    // 门 3：自动保存是否因连续失败而暂停
+    //    暂停期间不清空请求标记（保留"有待保存变更"的状态），
+    //    玩家手动重试时会保存最新快照
+    if (saveFailCountRef.current >= 3) {
+      return
+    }
+
+    saveRequestedRef.current = false
+
+    const snapshot = snapshotBuilderRef.current()
+    const result = writeSave(snapshot)
+
+    if (result.status === 'error') {
+      saveFailCountRef.current++
+      lastSaveErrorRef.current = result.error
+      if (saveFailCountRef.current >= 3) {
+        setSaveStatus('paused')
+        // 进入暂停状态后，恢复待保存标记
+        // 后续游戏操作不再触发自动写入（由门 3 拦截），
+        // 但标记表明有待保存的变更，手动重试时将基于最新快照保存
+        saveRequestedRef.current = true
+      } else {
+        setSaveStatus('error')
+      }
+    } else {
+      saveFailCountRef.current = 0
+      lastSaveErrorRef.current = null
+      setSaveStatus('success')
+    }
+  })
+
+  /** 手动重试保存（用于失败暂停后的手动恢复）
+   *
+   *  清零失败计数，解除暂停，使用当前最新状态立即同步保存。
+   *  返回本次保存结果供 UI 展示。
+   */
+  const retrySave = useCallback((): { status: 'success' | 'error'; error?: string } => {
+    if (!autoSaveEnabledRef.current) {
+      return { status: 'error', error: '当前状态不允许保存' }
+    }
+    // 清零失败计数，解除暂停
+    saveFailCountRef.current = 0
+    // 清除待保存标记（本次手动保存就是最新的）
+    saveRequestedRef.current = false
+    // 使用 snapshotBuilderRef 确保读取最新状态（不依赖闭包）
+    const snapshot = snapshotBuilderRef.current()
+    const result = writeSave(snapshot)
+    if (result.status === 'error') {
+      saveFailCountRef.current = 1
+      lastSaveErrorRef.current = result.error
+      setSaveStatus('error')
+      return { status: 'error', error: result.error }
+    }
+    lastSaveErrorRef.current = null
+    setSaveStatus('success')
+    return { status: 'success' }
+  }, [])
+
+  // 启动恢复成功时启用自动保存
+  // 仅在首次挂载后执行一次：如果是恢复存档，则自动保存从一开始就是启用状态
+  useEffect(() => {
+    if (bootInit.bootStatus === 'restored') {
+      autoSaveEnabledRef.current = true
+    }
+    // bootInit 是 useMemo([])，值不会变化，这里故意只执行一次
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   /** 重新开始一局（可更换开局身份与携带卡牌）
    *
    *  会删除旧的本局存档，避免新局被旧存档覆盖。
@@ -779,6 +899,13 @@ export function useGame(initialSetup?: StartSetup) {
       setRunId(newRunId)
       settleLockRef.current = false
 
+      // 5. 启用自动保存并请求首次保存
+      //    新局数据（初始状态、开局日志、opening popup、新 runId）已全部就绪，
+      //    在本次渲染提交后统一写入存档，确保玩家看到的画面与存档一致。
+      autoSaveEnabledRef.current = true
+      saveFailCountRef.current = 0
+      saveRequestedRef.current = true
+
       return { status: 'started' }
     },
     [startSetup, legacyProfile],
@@ -821,6 +948,10 @@ export function useGame(initialSetup?: StartSetup) {
       if (!ending) return { status: 'no_ending' }
       if (settleLockRef.current) return { status: 'in_progress' }
 
+      // 关闭自动保存并清除待处理请求：结算期间及结算后都不应再写入本局存档
+      autoSaveEnabledRef.current = false
+      saveRequestedRef.current = false
+
       // 立即加锁：同步防重入，不依赖 React state 更新
       settleLockRef.current = true
 
@@ -839,6 +970,8 @@ export function useGame(initialSetup?: StartSetup) {
         // 切换为 new_game 允许玩家进入下一局设置界面（收益不会重复发放，由 settleLegacy 幂等保证）
         setEnding(null)
         setBootStatus('new_game')
+        // 清理残留的旧存档（删除失败不影响，靠 settledRunIds 兜底）
+        deleteSave()
         return { status: 'already_settled' }
       }
 
@@ -846,6 +979,7 @@ export function useGame(initialSetup?: StartSetup) {
       const saveResult = saveLegacyProfile(result.profile)
       if (!saveResult.ok) {
         // 写入失败：释放锁（允许重试），不更新内存，不关闭弹窗，不切换 bootStatus
+        // 自动保存保持关闭（结局状态不变，不需要保存）
         settleLockRef.current = false
         return { status: 'save_error', error: saveResult.error }
       }
@@ -854,6 +988,14 @@ export function useGame(initialSetup?: StartSetup) {
       setLegacyProfile(result.profile)
       setEnding(null)
       setBootStatus('new_game')
+
+      // 遗产结算成功后，删除本局旧存档
+      // 删除失败不回滚结算（已完成且已持久化），继续依靠 settledRunIds 防止重复结算
+      const delResult = deleteSave()
+      if (delResult.status === 'error') {
+        console.warn('[settle] 旧存档删除失败，已通过 settledRunIds 防止重复结算:', delResult.error)
+      }
+
       return { status: 'settled' }
     },
     [ending, legacyProfile, runId, state],
@@ -861,7 +1003,10 @@ export function useGame(initialSetup?: StartSetup) {
 
   const log = useCallback(
     (day: number, slot: TimeSlot, kind: LogKind, text: string) => {
-      setLogs((prev) => [...prev, { id: logIdSeed++, day, slot, kind, text }])
+      // 在事件处理阶段分配 ID，避免在 setState updater 内修改模块级变量
+      // Strict Mode 下 updater 可能双调用，副作用会导致 ID 异常递增
+      const id = logIdSeed++
+      setLogs((prev) => [...prev, { id, day, slot, kind, text }])
     },
     [],
   )
@@ -931,6 +1076,10 @@ export function useGame(initialSetup?: StartSetup) {
   /** 年度总结：选择继续写，进入下一年 */
   const continueToNextYear = useCallback(() => {
     if (!state.pendingYearSummary) return
+
+    // 请求自动保存：跨越年度修改状态和日志
+    saveRequestedRef.current = true
+
     const summary = state.pendingYearSummary
     setState({
       ...state,
@@ -954,6 +1103,10 @@ export function useGame(initialSetup?: StartSetup) {
   /** 年度总结：选择封笔退休，触发结局结算 */
   const retireNow = useCallback(() => {
     if (!state.pendingYearSummary) return
+
+    // 请求自动保存：结局状态需要写入存档
+    saveRequestedRef.current = true
+
     const finalEnding = resolveFinalEnding(state)
     setEnding(finalEnding)
     log(state.day, 'morning', 'celebrate', `结局解锁：${finalEnding.title}`)
@@ -965,6 +1118,9 @@ export function useGame(initialSetup?: StartSetup) {
       if (!pendingEvent || !pendingEvent.options) return
       const option = pendingEvent.options[index]
       if (!option) return
+
+      // 请求自动保存：事件选择会修改状态、日志并关闭弹窗
+      saveRequestedRef.current = true
 
       const maxE = computeMaxEnergy(state)
       const maxS = computeMaxStress(state)
@@ -1198,6 +1354,8 @@ export function useGame(initialSetup?: StartSetup) {
 
         const parts = effectsToParts(action.effects)
         log(state.day, state.slot, 'info', `${action.label}：${parts}。`)
+        // 请求自动保存：请假操作已完成所有校验，即将修改状态
+        saveRequestedRef.current = true
         setState(nextState)
         return
       }
@@ -1212,6 +1370,8 @@ export function useGame(initialSetup?: StartSetup) {
             'celebrate',
             `你选择${action.label}，结束这一局网文生涯。`,
           )
+          // 请求自动保存：主动隐退触发结局，即将修改状态
+          saveRequestedRef.current = true
           setEnding(ending)
         }
         return
@@ -1221,8 +1381,10 @@ export function useGame(initialSetup?: StartSetup) {
         action.type === 'work' ||
         action.type === 'parttime' ||
         action.type === 'subculture'
-      )
+      ) {
+        // 这些操作由专用函数处理，不由 chooseAction 执行
         return
+      }
       // 特质禁用行动检查
       if (isActionDisabled(state, action.type)) {
         log(
@@ -1370,6 +1532,8 @@ export function useGame(initialSetup?: StartSetup) {
         .join('，')
       log(state.day, state.slot, 'info', `${action.label}：${logText}。`)
 
+      // 请求自动保存：普通行动已完成所有校验，即将修改状态
+      saveRequestedRef.current = true
       setState({
         ...nextState,
         pathScores: newPathScores,
@@ -1394,6 +1558,9 @@ export function useGame(initialSetup?: StartSetup) {
         )
         return
       }
+
+      // 请求自动保存：发布作品会修改状态和日志
+      saveRequestedRef.current = true
 
       const maxE = computeMaxEnergy(state)
       const maxS = computeMaxStress(state)
@@ -1479,6 +1646,10 @@ export function useGame(initialSetup?: StartSetup) {
       draft?: import('../types/career').BookCreationDraft
     }) => {
       if (state.actedThisSlot) return
+
+      // 请求自动保存：开新书修改状态和日志
+      saveRequestedRef.current = true
+
       const platformId =
         input?.platformId ??
         (Object.keys(PLATFORMS)[0] as import('../types/platform').NovelPlatformId)
@@ -1517,6 +1688,10 @@ export function useGame(initialSetup?: StartSetup) {
   const applyWriterStrategy = useCallback(
     (actionId: string) => {
       if (state.actedThisSlot) return
+
+      // 请求自动保存：写作策略修改状态和日志
+      saveRequestedRef.current = true
+
       const project = getActiveWriterProject()
       if (!project) {
         log(state.day, state.slot, 'loss', '当前没有进行中的小说，先去“开新书”。')
@@ -1665,6 +1840,10 @@ export function useGame(initialSetup?: StartSetup) {
       log(state.day, state.slot, 'loss', '今日水字数次数已达上限。')
       return
     }
+
+    // 请求自动保存：开关水字数模式都会修改状态
+    saveRequestedRef.current = true
+
     if (state.waterModeActive) {
       setState({ ...state, waterModeActive: false })
       log(state.day, state.slot, 'info', '已取消水字数模式。')
@@ -1690,6 +1869,10 @@ export function useGame(initialSetup?: StartSetup) {
       log(state.day, state.slot, 'loss', '今日存稿次数已达上限。')
       return
     }
+
+    // 请求自动保存：存稿修改状态和日志
+    saveRequestedRef.current = true
+
     const maxE = computeMaxEnergy(state)
     const maxS = computeMaxStress(state)
     const newStats = applyEffects(
@@ -1733,6 +1916,10 @@ export function useGame(initialSetup?: StartSetup) {
       log(state.day, state.slot, 'loss', '精力不足，无法使用存稿更新。')
       return
     }
+
+    // 请求自动保存：使用存稿修改状态和项目进度
+    saveRequestedRef.current = true
+
     const result = applyWriterAction(
       project,
       action,
@@ -1772,6 +1959,10 @@ export function useGame(initialSetup?: StartSetup) {
   const completeActiveWriterProject = useCallback(() => {
     const project = getActiveWriterProject()
     if (!project) return
+
+    // 请求自动保存：完本修改状态和日志
+    saveRequestedRef.current = true
+
     const { project: next, log: logText } = completeWriterProject(
       project,
       state.day,
@@ -1810,6 +2001,10 @@ export function useGame(initialSetup?: StartSetup) {
   const abandonActiveWriterProject = useCallback(() => {
     const project = getActiveWriterProject()
     if (!project) return
+
+    // 请求自动保存：太监修改状态和日志
+    saveRequestedRef.current = true
+
     const { project: next, log: logText, stressDelta } = abandonWriterProject(
       project,
       state.day,
@@ -1860,6 +2055,10 @@ export function useGame(initialSetup?: StartSetup) {
         )
         return
       }
+
+      // 请求自动保存：获得灵感修改状态
+      saveRequestedRef.current = true
+
       setState({
         ...state,
         inspirations: [...state.inspirations, inspiration],
@@ -1903,6 +2102,9 @@ export function useGame(initialSetup?: StartSetup) {
       )
       if (!result) return
 
+      // 请求自动保存：注入灵感修改状态和项目
+      saveRequestedRef.current = true
+
       const newInspirations = state.inspirations.filter(
         (i) => i.id !== inspirationId,
       )
@@ -1945,6 +2147,9 @@ export function useGame(initialSetup?: StartSetup) {
         log(state.day, state.slot, 'loss', '你还没有解锁这个梗。')
         return
       }
+
+      // 请求自动保存：致敬梗修改状态和项目
+      saveRequestedRef.current = true
 
       const meme = state.unlockedMemes[memeIndex]
       const result = applyMemeHomage(project, meme, state.day)
@@ -1998,6 +2203,9 @@ export function useGame(initialSetup?: StartSetup) {
       )
       return
     }
+
+    // 请求自动保存：应急兼职修改状态和日志
+    saveRequestedRef.current = true
 
     const maxE = computeMaxEnergy(state)
     const maxS = computeMaxStress(state)
@@ -2076,6 +2284,10 @@ export function useGame(initialSetup?: StartSetup) {
     if (state.actedThisSlot) return
     if (state.partTimeLock) return
     if (!state.availableEncounter) return
+
+    // 请求自动保存：开启奇遇会修改状态、日志和事件链进度
+    saveRequestedRef.current = true
+
     // 特质禁用行动检查（subculture 也是兼职体验，被禁用时同样不可触发）
     if (isActionDisabled(state, 'subculture')) {
       log(
@@ -2218,6 +2430,9 @@ export function useGame(initialSetup?: StartSetup) {
       if (!currentChain || !currentStepId) return
       const step = currentChain.steps.find((s) => s.stepId === currentStepId)
       if (!step) return
+
+      // 请求自动保存：事件链选择会修改状态、日志和事件链进度
+      saveRequestedRef.current = true
 
       // 1. 先授予特质（若 effect.grantTrait 存在）：影响后续 maxEnergy/maxStress
       let newTraits = state.activeTraits
@@ -2402,6 +2617,9 @@ export function useGame(initialSetup?: StartSetup) {
     if (state.pendingYearSummary) return
     if (!state.actedThisSlot) return
     const next = NEXT_SLOT[state.slot]
+
+    // 请求自动保存：本函数所有后续路径都会修改游戏状态
+    saveRequestedRef.current = true
 
     if (next === 'next-day') {
       const newDay = state.day + 1
@@ -3086,6 +3304,9 @@ export function useGame(initialSetup?: StartSetup) {
     runId,
     // 启动状态
     bootStatus,
+    // 自动保存状态
+    saveStatus,
+    retrySave,
     // CareerEngine：网络作家
     startWriterProject,
     applyWriterStrategy,
